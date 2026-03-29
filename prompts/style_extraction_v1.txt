@@ -1,0 +1,2 @@
+Extract per-post style features and synthesize a style guide.
+Output JSON only with `posts` and `style_guide` keys.

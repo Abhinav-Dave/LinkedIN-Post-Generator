@@ -1,0 +1,5 @@
+Review post content for WARN-only lint issues:
+- vague CTA
+- passive voice density
+- excessive bullet density
+Return JSON array only.

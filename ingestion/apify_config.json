@@ -1,0 +1,16 @@
+{
+  "actor": "apify/linkedin-post-scraper",
+  "input": {
+    "profileUrls": [],
+    "maxPostsPerProfile": 50,
+    "proxy": {
+      "useApifyProxy": true
+    }
+  },
+  "webhook": {
+    "eventTypes": [
+      "ACTOR.RUN.SUCCEEDED"
+    ],
+    "requestUrl": ""
+  }
+}

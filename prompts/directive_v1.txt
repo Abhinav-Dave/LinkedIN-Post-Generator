@@ -1,0 +1,3 @@
+Generate 5 LinkedIn posts for the provided industry and topic.
+Enforce hook clarity >= 7 and include at least one credibility signal per post.
+Return JSON only.

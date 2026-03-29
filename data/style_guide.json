@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "generated_at": "",
+  "hook_archetypes": [],
+  "length_range": {
+    "p25": 850,
+    "p75": 1280
+  },
+  "line_break_density_norm": 2.3,
+  "credibility_moves": [],
+  "cta_patterns": {
+    "high_engagement": [],
+    "low_engagement": []
+  },
+  "anti_patterns": []
+}

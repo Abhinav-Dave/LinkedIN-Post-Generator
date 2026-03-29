@@ -1,0 +1,3 @@
+Select the most relevant trend items from raw feed data.
+Keep only items from the last 7 days and score relevance 1-5.
+Output JSON only.

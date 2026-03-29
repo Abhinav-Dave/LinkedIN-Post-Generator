@@ -1,0 +1,3 @@
+Use style guide summary and trend brief to generate high-quality posts.
+Do not fabricate trend data.
+Return JSON array only matching output schema.
