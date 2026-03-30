@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0c0f14;
+  --surface: #141a22;
+  --border: #243044;
+  --text: #e8edf4;
+  --muted: #8b9cb3;
+  --accent: #3b82f6;
+  --accent-dim: #2563eb;
+}
+
+body {
+  @apply min-h-screen antialiased;
+  background: var(--bg);
+  color: var(--text);
+}

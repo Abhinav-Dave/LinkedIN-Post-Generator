@@ -1,3 +1,13 @@
-Generate 5 LinkedIn posts for the provided industry and topic.
-Enforce hook clarity >= 7 and include at least one credibility signal per post.
-Return JSON only.
+Generate exactly [N] distinct LinkedIn posts.
+Industry: [INDUSTRY]
+Topic focus: [TOPIC_FOCUS]
+Audience: mid-to-senior ICs, founders, PMs in B2B SaaS — skeptical of hype.
+
+Composition target across the batch:
+- 1–2 trend_reaction (only if a trend item fits; set trend_source to that URL, else use post_type workflow and trend_source "none")
+- 1–2 workflow
+- 1 contrarian
+- 0–1 mini_case_study
+- 0–1 question
+
+Return JSON only: a JSON array of post objects. No markdown fences.

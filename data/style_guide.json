@@ -1,16 +1,55 @@
 {
   "version": "1.0",
-  "generated_at": "",
-  "hook_archetypes": [],
-  "length_range": {
-    "p25": 850,
-    "p75": 1280
-  },
+  "generated_at": "2026-03-29T00:00:00.000Z",
+  "hook_archetypes": [
+    {
+      "name": "Specific number opener",
+      "structure": "[Metric] in [timeframe] — what changed",
+      "example_scaffold": "We cut [X] by [Y%] in [Z weeks] using [tool] + [workflow]."
+    },
+    {
+      "name": "Counterintuitive constraint",
+      "structure": "Everyone optimizes X. We won by ignoring X and doubling down on Y.",
+      "example_scaffold": "Everyone bought [big tool]. Speed came from [smaller thing] + discipline."
+    },
+    {
+      "name": "Question with stakes",
+      "structure": "What would you do if [constraint]? Here's the playbook we used.",
+      "example_scaffold": "What if you could only ship with [Claude/Excel/MCP] this quarter?"
+    },
+    {
+      "name": "Mini-story arc",
+      "structure": "Last [Tuesday], [situation]. Three decisions mattered.",
+      "example_scaffold": "Last Tuesday our sheet broke at row 200k. Here's how we recovered."
+    },
+    {
+      "name": "List tease with proof",
+      "structure": "3 lessons from [project]. The third one hurt.",
+      "example_scaffold": "3 lessons from wiring Claude into Excel without creating spreadsheet chaos."
+    }
+  ],
+  "length_range": { "p25": 850, "p75": 1280 },
   "line_break_density_norm": 2.3,
-  "credibility_moves": [],
+  "credibility_moves": [
+    "Name the exact tool and version/workflow surface",
+    "Quote a measurable outcome or time saved",
+    "Reference a dated rollout, incident, or benchmark window"
+  ],
   "cta_patterns": {
-    "high_engagement": [],
-    "low_engagement": []
+    "high_engagement": [
+      "Ask a specific question tied to one variable (tool, team size, stack)"
+    ],
+    "low_engagement": ["Thoughts?", "Agree?"]
   },
-  "anti_patterns": []
+  "anti_patterns": [
+    "In today's world",
+    "Excited to share",
+    "Game changer",
+    "Let that sink in",
+    "I'm humbled",
+    "Hot take:",
+    "Generic advice with no example",
+    "Buzzwords without a workflow",
+    "Claims with no number or tool"
+  ]
 }

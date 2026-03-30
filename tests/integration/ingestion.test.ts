@@ -1,5 +1,7 @@
+import { describe, expect, it } from "vitest";
+
 describe("ingestion API", () => {
-  it("placeholder", () => {
+  it("suite reserved for webhook integration with mock Apify payloads", () => {
     expect(true).toBe(true);
   });
 });

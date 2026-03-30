@@ -1,3 +1,40 @@
-Use style guide summary and trend brief to generate high-quality posts.
-Do not fabricate trend data.
-Return JSON array only matching output schema.
+STYLE GUIDE SUMMARY:
+[STYLE_GUIDE_SUMMARY]
+
+TREND BRIEF (top items by relevance — use only these for trend_reaction posts):
+[TREND_BRIEF_JSON]
+
+TASK: Generate [N] LinkedIn posts.
+Industry: [INDUSTRY]
+Topic focus: [TOPIC_FOCUS]
+
+Hard rules:
+1. Choose a hook_archetype from the style guide list (or closest match).
+2. Each post must include at least one credibility signal (specific number, named tool, or dated event).
+3. Body length between [MIN_CHARS] and [MAX_CHARS] characters (LinkedIn-native line breaks, no markdown).
+4. First line (hook) should be ≤120 characters before the first line break.
+5. Self-score hook_clarity_score 1–10 using this rubric:
+   - Specificity 0–4: 4 = number/name/date in hook; 3 = concrete claim; 2 = moderate; 1 = vague; 0 = generic.
+   - Curiosity gap 0–3: 3 = strong open loop; 2 = mild; 1 = flat; 0 = none.
+   - No banned phrases 0–3: 3 = zero banned phrases; 2 = one borderline; 0 = any banned phrase.
+   Sum the three sub-scores. The total must be ≥ 7 or rewrite the hook until it is.
+6. Banned openers (do not start the post with): "In today's world", "Excited to share", "Hot take:", "Game changer", "Let that sink in", "I'm humbled", "Im humbled".
+7. For contrarian posts only, you may start with "Unpopular opinion:" if the body actually challenges a mainstream assumption.
+8. Use trend data only from the Trend Brief JSON. If none applies, set post_type to workflow or question and trend_source to "none".
+
+Output: JSON array only. Each element must match:
+{
+  "post_id": "<uuid>",
+  "industry": "[INDUSTRY]",
+  "topic_focus": "[TOPIC_FOCUS]",
+  "hook_archetype": "<string>",
+  "hook_clarity_score": <integer 1-10>,
+  "body": "<full post text>",
+  "char_count": <integer>,
+  "credibility_signals": ["<signal>"],
+  "trend_source": "<URL from brief or \"none\">",
+  "post_type": "trend_reaction | workflow | contrarian | mini_case_study | question",
+  "cta_type": "none | soft | direct | link",
+  "lint_flags": [],
+  "generated_at": "<ISO 8601>"
+}
