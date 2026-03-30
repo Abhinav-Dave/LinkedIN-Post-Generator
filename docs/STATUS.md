@@ -1,12 +1,10 @@
 # Project status (one screen)
 
-**Last known commit:** `3ac8891` — docs: refresh STATUS for 3db765e milestone and verification
-
-**Branch:** `main` (tracking `origin/main`) — working tree clean as of last update; run `git status` before agents pick up new local edits.
+**Branch:** `main` (tracking `origin/main`). **Doc sync:** 2026-03-30 — run `git log -1 -- docs/STATUS.md` for the commit that last touched this file. Run `git status` before agents pick up new local edits.
 
 **Agent implementation log:** [docs/Agent_status.md](Agent_status.md) (A–I rollout; J later).
 
-## Latest milestone (`3db765e`; STATUS synced in `3ac8891`)
+## Latest milestone (`3db765e`, on `main`)
 
 - TS corpus path: Apify dataset helper, webhook verification, `lib/migrations.ts`, richer `db` layer, `corpus_ingestion.ts`, `trend_ttl`, `pipeline.types`
 - API/UI: stronger `/api/ingestion/corpus`, `/api/trends` + `/refresh`, generate route tweaks; dashboard refresh in `app/page.tsx`
