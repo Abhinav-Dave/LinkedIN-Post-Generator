@@ -1,7 +1,5 @@
 import fs from "fs";
 import path from "path";
-import { styleGuideSummary, loadStyleGuide } from "@/lib/style_guide";
-import { topTrendsForPrompt } from "@/lib/trend_brief";
 
 function readPromptFile(name: string): string {
   const p = path.join(process.cwd(), "prompts", name);
@@ -12,16 +10,17 @@ export type BuildPromptParams = {
   industry: string;
   topicFocus: string;
   numPosts: number;
+  /** Injected by caller (e.g. pipeline) — keeps this module free of DB reads. */
+  styleSummary: string;
+  trendBriefJson: string;
   minChars?: number;
   maxChars?: number;
 };
 
 export function buildPrompt(params: BuildPromptParams): { system: string; user: string } {
   const system = readPromptFile("system_v1.txt");
-  const guide = loadStyleGuide();
-  const summary = styleGuideSummary(guide);
-  const trends = topTrendsForPrompt(3, 7);
-  const trendBriefJson = JSON.stringify(trends);
+  const summary = params.styleSummary;
+  const trendBriefJson = params.trendBriefJson;
   const minC = params.minChars ?? 600;
   const maxC = params.maxChars ?? 2000;
 
@@ -46,31 +45,37 @@ export function buildPrompt(params: BuildPromptParams): { system: string; user: 
   return { system, user };
 }
 
-export function buildRegenerateOnePrompt(args: {
+export type BuildRegenerateOnePromptArgs = {
   industry: string;
   topicFocus: string;
   errors: string[];
   styleSummary: string;
   trendBriefJson: string;
-}): { system: string; user: string } {
-  const system = readPromptFile("system_v1.txt");
-  const user = `
-STYLE GUIDE SUMMARY:
-${args.styleSummary}
+  minChars?: number;
+  maxChars?: number;
+};
 
-TREND BRIEF (top by relevance):
-${args.trendBriefJson}
+/**
+ * Same contract as `buildPrompt` (generation_v1 + directive_v1) with N=1, plus a regeneration
+ * suffix so repaired posts follow the full template, not a thin inline retry.
+ */
+export function buildRegenerateOnePrompt(args: BuildRegenerateOnePromptArgs): { system: string; user: string } {
+  const minC = args.minChars ?? 600;
+  const maxC = args.maxChars ?? 2000;
+  const { system, user: baseUser } = buildPrompt({
+    industry: args.industry,
+    topicFocus: args.topicFocus,
+    numPosts: 1,
+    styleSummary: args.styleSummary,
+    trendBriefJson: args.trendBriefJson,
+    minChars: minC,
+    maxChars: maxC,
+  });
 
-REGENERATE exactly ONE LinkedIn post. Previous version failed lint:
-${args.errors.join("; ")}
+  let suffix = readPromptFile("regenerate_single_suffix_v1.txt");
+  suffix = suffix.replaceAll("[REGENERATION_ERRORS]", args.errors.map((e) => `- ${e}`).join("\n"));
 
-Industry: ${args.industry}
-Topic focus: ${args.topicFocus}
-
-Rules: 600–2000 chars, hook clarity self-score >= 7, credibility signal, no banned openers.
-Output a single JSON object (not array) matching the post schema with all fields.
-JSON only. No markdown.
-`.trim();
+  const user = `${baseUser}\n\n${suffix}`;
   return { system, user };
 }
 

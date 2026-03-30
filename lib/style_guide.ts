@@ -1,98 +1,125 @@
 import fs from "fs";
 import path from "path";
-import { z } from "zod";
+import { styleGuideSchema, type StyleGuide } from "@/lib/types";
 
-const styleGuideSchema = z.object({
-  version: z.string(),
-  generated_at: z.string(),
-  hook_archetypes: z.array(
-    z.object({
-      name: z.string(),
-      structure: z.string().optional(),
-      example_scaffold: z.string().optional(),
-    }),
-  ),
-  length_range: z.object({ p25: z.number(), p75: z.number() }),
-  line_break_density_norm: z.number().optional(),
-  credibility_moves: z.array(z.string()),
-  cta_patterns: z.object({
-    high_engagement: z.array(z.string()),
-    low_engagement: z.array(z.string()),
-  }),
-  anti_patterns: z.array(z.string()),
-});
-
-export type StyleGuide = z.infer<typeof styleGuideSchema>;
-
-const MINIMAL_FALLBACK: StyleGuide = {
-  version: "fallback-1.0",
-  generated_at: new Date().toISOString(),
+const MINIMAL_STYLE_GUIDE: StyleGuide = {
+  version: "0.0-fallback",
+  generated_at: "1970-01-01T00:00:00.000Z",
   hook_archetypes: [
     {
       name: "Specific number opener",
-      structure: "[Metric] in [timeframe] — what we learned",
-      example_scaffold: "We cut [X] by [Y%] in [Z weeks] using [tool].",
+      structure: "[Metric] in [timeframe] — what changed",
+      example_scaffold: "We improved [X] by [Y%] in [Z weeks] using [tool].",
     },
     {
-      name: "Counterintuitive framing",
-      structure: "Everyone says X. In practice, Y wins because…",
-      example_scaffold: "Everyone automates [X]. We got speed from [Y] instead.",
+      name: "Workflow story",
+      structure: "Constraint → decision → outcome",
+      example_scaffold: "We had [constraint]. We chose [approach]. Result: [outcome].",
     },
     {
-      name: "Question + constraint",
-      structure: "What would you do if [constraint]? Here's what we tried.",
-      example_scaffold: "What if you could only use [tool A] + [tool B]?",
+      name: "Question with stakes",
+      structure: "What would you do if [constraint]?",
+      example_scaffold: "What would you ship if you could only use [one tool] this week?",
     },
   ],
   length_range: { p25: 850, p75: 1280 },
   line_break_density_norm: 2.3,
   credibility_moves: [
-    "Name the tool",
-    "Quote a measured outcome",
-    "Reference a dated rollout or benchmark",
+    "Name the exact tool or surface",
+    "Include one measurable outcome or timeframe",
+    "Reference a concrete scenario, not abstractions",
   ],
-  cta_patterns: { high_engagement: ["Ask a specific question"], low_engagement: ["Thoughts?"] },
+  cta_patterns: {
+    high_engagement: ["Ask one specific follow-up tied to the reader's stack or team"],
+    low_engagement: [],
+  },
   anti_patterns: [
-    "In today's world",
-    "Excited to share",
-    "Game changer",
-    "Let that sink in",
-    "Generic advice without an example",
+    "Generic hype with no example",
+    "Buzzwords without a workflow",
+    "Claims with no number, tool, or timeframe",
   ],
 };
 
 export function getStyleGuidePath(): string {
+  const override = process.env.STYLE_GUIDE_PATH?.trim();
+  if (override) {
+    return path.isAbsolute(override) ? override : path.join(process.cwd(), override);
+  }
   return path.join(process.cwd(), "data", "style_guide.json");
 }
 
-export function loadStyleGuide(): StyleGuide {
-  const p = getStyleGuidePath();
+export type LoadedStyleGuide = {
+  guide: StyleGuide;
+  /** False when JSON was missing/invalid and the minimal fallback was used. */
+  fromFile: boolean;
+};
+
+function readStyleGuideFile(): LoadedStyleGuide {
+  const file = getStyleGuidePath();
   try {
-    const raw = fs.readFileSync(p, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
-    const r = styleGuideSchema.safeParse(parsed);
-    if (r.success && r.data.hook_archetypes.length >= 1) return r.data;
+    const raw = fs.readFileSync(file, "utf8");
+    const json: unknown = JSON.parse(raw);
+    const guide = styleGuideSchema.parse(json);
+    return { guide, fromFile: true };
   } catch (e) {
-    console.error("[style_guide] missing or invalid; using fallback", e);
+    console.error(
+      "[style_guide] Missing or invalid style_guide.json — using minimal fallback. Path:",
+      file,
+      e,
+    );
+    return { guide: MINIMAL_STYLE_GUIDE, fromFile: false };
   }
-  return MINIMAL_FALLBACK;
 }
 
-/** Compact text for prompt injection (target ≤ ~500 tokens — heuristic char cap). */
-export function styleGuideSummary(g: StyleGuide, maxChars = 2800): string {
-  const hooks = g.hook_archetypes
-    .map((h) => `- ${h.name}: ${h.structure ?? ""} ${h.example_scaffold ?? ""}`.trim())
-    .join("\n");
-  const anti = g.anti_patterns.slice(0, 12).join("; ");
-  const moves = g.credibility_moves.join("; ");
-  const len = `Target length P25–P75 chars: ${g.length_range.p25}–${g.length_range.p75}`;
-  const parts = [
-    `Style guide v${g.version}. ${len}.`,
-    `Hook archetypes:\n${hooks}`,
-    `Credibility moves: ${moves}.`,
-    `Anti-patterns to avoid: ${anti}.`,
-  ];
-  let s = parts.join("\n\n");
-  if (s.length > maxChars) s = s.slice(0, maxChars) + "\n…";
-  return s;
+/**
+ * Read and validate `data/style_guide.json`. On missing file or parse errors,
+ * returns PRD §14 minimal fallback and logs (stderr).
+ */
+export function loadStyleGuide(): StyleGuide {
+  return readStyleGuideFile().guide;
 }
+
+/** Same as `loadStyleGuide` plus `fromFile` for diagnostics. */
+export function loadStyleGuideMeta(): LoadedStyleGuide {
+  return readStyleGuideFile();
+}
+
+/**
+ * Compact, prompt-oriented summary (target ≤500 tokens is enforced upstream in prompt_builder).
+ */
+export function getStyleGuideSummary(guide?: StyleGuide): string {
+  const g = guide ?? loadStyleGuide();
+  const lines: string[] = [
+    `Style guide v${g.version} (generated ${g.generated_at})`,
+    "",
+    "Hook archetypes:",
+    ...g.hook_archetypes.map(
+      (h) => `- ${h.name}: ${h.structure} | Scaffold: ${h.example_scaffold}`,
+    ),
+    "",
+    `Length p25–p75 chars: ${g.length_range.p25}–${g.length_range.p75}; line breaks ~${g.line_break_density_norm} per post.`,
+    "",
+    "Credibility moves:",
+    ...g.credibility_moves.map((c) => `- ${c}`),
+    "",
+    "CTA — high engagement:",
+    ...g.cta_patterns.high_engagement.map((c) => `- ${c}`),
+    "CTA — low engagement:",
+    ...g.cta_patterns.low_engagement.map((c) => `- ${c}`),
+    "",
+    "Anti-patterns to avoid:",
+    ...g.anti_patterns.map((a) => `- ${a}`),
+  ];
+  return lines.join("\n");
+}
+
+/** Alias for existing call sites (`prompt_builder`, `pipeline`). */
+export const styleGuideSummary = getStyleGuideSummary;
+
+/**
+ * @internal — test hook for injecting path or guide without env.
+ */
+export const __styleGuideTestHooks = {
+  MINIMAL_STYLE_GUIDE,
+  styleGuideSchema,
+};

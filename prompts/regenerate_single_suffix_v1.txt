@@ -1,0 +1,10 @@
+---
+REGENERATION — APPLIES ON TOP OF THE GENERATION + DIRECTIVE BLOCKS ABOVE
+
+The previous draft failed these checks (address every one):
+[REGENERATION_ERRORS]
+
+For this response ONLY:
+- Obey the same style guide, trend brief, credibility, hook scoring, and banned-opener rules as the main generation contract above.
+- Return exactly ONE JSON object matching the post schema (same fields as in the OUTPUT section). Do NOT wrap it in an array.
+- JSON only. No markdown. No preamble.

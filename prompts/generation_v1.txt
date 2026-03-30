@@ -4,25 +4,96 @@ STYLE GUIDE SUMMARY:
 TREND BRIEF (top items by relevance — use only these for trend_reaction posts):
 [TREND_BRIEF_JSON]
 
-TASK: Generate [N] LinkedIn posts.
+TASK
+Generate exactly [N] LinkedIn posts.
+
 Industry: [INDUSTRY]
 Topic focus: [TOPIC_FOCUS]
 
-Hard rules:
-1. Choose a hook_archetype from the style guide list (or closest match).
-2. Each post must include at least one credibility signal (specific number, named tool, or dated event).
-3. Body length between [MIN_CHARS] and [MAX_CHARS] characters (LinkedIn-native line breaks, no markdown).
-4. First line (hook) should be ≤120 characters before the first line break.
-5. Self-score hook_clarity_score 1–10 using this rubric:
-   - Specificity 0–4: 4 = number/name/date in hook; 3 = concrete claim; 2 = moderate; 1 = vague; 0 = generic.
-   - Curiosity gap 0–3: 3 = strong open loop; 2 = mild; 1 = flat; 0 = none.
-   - No banned phrases 0–3: 3 = zero banned phrases; 2 = one borderline; 0 = any banned phrase.
-   Sum the three sub-scores. The total must be ≥ 7 or rewrite the hook until it is.
-6. Banned openers (do not start the post with): "In today's world", "Excited to share", "Hot take:", "Game changer", "Let that sink in", "I'm humbled", "Im humbled".
-7. For contrarian posts only, you may start with "Unpopular opinion:" if the body actually challenges a mainstream assumption.
-8. Use trend data only from the Trend Brief JSON. If none applies, set post_type to workflow or question and trend_source to "none".
+Your job is to generate sharp, high-signal B2B LinkedIn posts that feel specific, credible, and native to the platform.
+Do not produce generic, vague, repetitive, or advice-blog-style content.
 
-Output: JSON array only. Each element must match:
+POST REQUIREMENTS
+For each post:
+
+1. Hook archetype
+- Choose hook_archetype from the style guide hook archetypes.
+- If none fits perfectly, use the nearest existing archetype rather than inventing a new category.
+
+2. Credibility
+- Include at least one credibility signal in the post body.
+- Valid credibility signals include:
+  - a specific number
+  - a named tool
+  - a dated event
+  - a concrete workflow step
+- Do not invent statistics, URLs, trend facts, or experiences not grounded in the provided inputs.
+
+3. Length and format
+- Body length must be between [MIN_CHARS] and [MAX_CHARS] characters.
+- The first line must be 120 characters or fewer.
+- Use plain text only.
+- Use LinkedIn-native line breaks.
+- Do not use markdown bullets, headings, or code fences.
+
+4. Post quality
+- Each post should feel distinct in angle and framing.
+- Avoid filler, vague motivation language, and generic takeaways.
+- Prefer concrete workflows, tradeoffs, observations, inefficiencies, mistakes, or surprising insights.
+- The body should sound like practitioner-level thinking, not templated content marketing.
+
+5. Trend usage
+- Use trend information only from the provided Trend Brief JSON.
+- If a post uses a trend, set:
+  - post_type = "trend_reaction"
+  - trend_source = exact source URL from the Trend Brief
+- If no trend is used, set trend_source = "none".
+- Never cite or imply an external trend that is not present in the Trend Brief.
+
+6. Banned openers
+Do not start the first line with:
+- "In today's world"
+- "Excited to share"
+- "Hot take:"
+- "Game changer"
+- "Let that sink in"
+- "I'm humbled"
+- "Im humbled"
+
+7. Contrarian exception
+- You may start with "Unpopular opinion:" only when post_type is "contrarian"
+- If used, the body must genuinely challenge a mainstream assumption
+
+HOOK SCORING
+For each post, internally score the hook_clarity_score from 1 to 10 using this rubric:
+
+- Specificity (0-4)
+  - 4 = contains a number, name, tool, or date
+  - 3 = concrete claim
+  - 2 = moderately concrete
+  - 1 = vague
+  - 0 = generic
+
+- Curiosity gap (0-3)
+  - 3 = strong open loop
+  - 2 = mildly intriguing
+  - 1 = predictable
+  - 0 = flat
+
+- Clarity / banned phrasing (0-3)
+  - 3 = clear and no banned phrasing
+  - 2 = one borderline phrase
+  - 0 = banned phrasing present
+
+If total score is less than 7, rewrite the hook before finalizing the post.
+
+OUTPUT
+Return only a JSON array.
+No preamble.
+No markdown.
+No explanations.
+
+Each element must match this schema exactly:
 {
   "post_id": "<uuid>",
   "industry": "[INDUSTRY]",
@@ -31,10 +102,20 @@ Output: JSON array only. Each element must match:
   "hook_clarity_score": <integer 1-10>,
   "body": "<full post text>",
   "char_count": <integer>,
-  "credibility_signals": ["<signal>"],
-  "trend_source": "<URL from brief or \"none\">",
+  "credibility_signals": ["<signal 1>"],
+  "trend_source": "<URL from brief or 'none'>",
   "post_type": "trend_reaction | workflow | contrarian | mini_case_study | question",
   "cta_type": "none | soft | direct | link",
   "lint_flags": [],
   "generated_at": "<ISO 8601>"
 }
+
+FINAL VALIDATION
+Before returning:
+- Ensure exactly [N] posts are present
+- Ensure every post matches the schema
+- Ensure every post includes at least one credibility signal
+- Ensure every body is within [MIN_CHARS] and [MAX_CHARS]
+- Ensure every hook_clarity_score is at least 7
+- Ensure trend_reaction posts use only Trend Brief URLs
+- Ensure non-trend posts use "none" for trend_source

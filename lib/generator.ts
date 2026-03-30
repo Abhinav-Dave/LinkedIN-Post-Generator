@@ -1,7 +1,13 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuidv4 } from "uuid";
-import type { GeneratedPost } from "@/lib/types";
-import { generatedPostSchema } from "@/lib/types";
+import { buildPrompt, buildRegenerateOnePrompt } from "@/lib/prompt_builder";
+import type { GeneratedPost, GenerateBatchInput } from "@/lib/types";
+import {
+  generatedPostSchema,
+  generateBatchInputSchema,
+  HOOK_CLARITY_MIN_SCORE,
+  HOOK_SCORE_MAX_RETRIES,
+} from "@/lib/types";
 
 function getApiKey(): string {
   const k = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -10,10 +16,18 @@ function getApiKey(): string {
 }
 
 function getModelName(): string {
-  return process.env.GEMINI_MODEL_MAIN?.trim() || "gemini-2.0-flash";
+  return process.env.GEMINI_MODEL_MAIN?.trim() || "gemini-2.5-flash";
 }
 
-function stripJsonFence(text: string): string {
+function getGenModel(system: string) {
+  const genAI = new GoogleGenerativeAI(getApiKey());
+  return genAI.getGenerativeModel({
+    model: getModelName(),
+    systemInstruction: system,
+  });
+}
+
+export function stripJsonFence(text: string): string {
   let t = text.trim();
   if (t.startsWith("```json")) t = t.slice(7);
   else if (t.startsWith("```")) t = t.slice(3);
@@ -58,37 +72,90 @@ function itemToPost(item: unknown, industry: string, topicFocus: string): Genera
   return r.success ? r.data : null;
 }
 
+function materializeBatch(text: string, industry: string, topicFocus: string): GeneratedPost[] {
+  const items = parsePostArray(text);
+  const out: GeneratedPost[] = [];
+  for (const item of items) {
+    const p = itemToPost(item, industry, topicFocus);
+    if (p) out.push(p);
+  }
+  return out;
+}
+
+async function generateContentJson(system: string, user: string, temperature: number, maxTokens: number) {
+  const model = getGenModel(system);
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: {
+      temperature,
+      maxOutputTokens: maxTokens,
+      responseMimeType: "application/json",
+    },
+  });
+  return result.response.text();
+}
+
+/**
+ * PRD §770 — malformed JSON: retry the generation call once.
+ * Returns parseable posts or throws after the second failure.
+ */
 export async function generatePostsBatch(
   system: string,
   user: string,
   industry: string,
   topicFocus: string,
 ): Promise<GeneratedPost[]> {
-  const genAI = new GoogleGenerativeAI(getApiKey());
-  const model = genAI.getGenerativeModel({
-    model: getModelName(),
-    systemInstruction: system,
-  });
-
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: user }] }],
-    generationConfig: {
-      temperature: 0.75,
-      maxOutputTokens: 8192,
-      responseMimeType: "application/json",
-    },
-  });
-
-  const text = result.response.text();
-  const items = parsePostArray(text);
-  const out: GeneratedPost[] = [];
-
-  for (const item of items) {
-    const p = itemToPost(item, industry, topicFocus);
-    if (p) out.push(p);
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const text = await generateContentJson(system, user, 0.75, 8192);
+      return materializeBatch(text, industry, topicFocus);
+    } catch (e) {
+      lastErr = e;
+    }
   }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
 
-  return out;
+/**
+ * PRD §8.2 — if hook_clarity_score < 7, regenerate up to 2 times (generator layer, not API).
+ */
+async function ensureHookClarity(
+  post: GeneratedPost,
+  industry: string,
+  topicFocus: string,
+  styleSummary: string,
+  trendBriefJson: string,
+): Promise<GeneratedPost> {
+  let current = post;
+  if (current.hook_clarity_score >= HOOK_CLARITY_MIN_SCORE) {
+    return current;
+  }
+  for (let r = 0; r < HOOK_SCORE_MAX_RETRIES; r++) {
+    const { system, user } = buildRegenerateOnePrompt({
+      industry,
+      topicFocus,
+      errors: [
+        `hook_clarity_score was ${current.hook_clarity_score}; required minimum is ${HOOK_CLARITY_MIN_SCORE}. Rewrite the opening hook to be more specific (number, named tool, date, or concrete claim) and re-score using the rubric.`,
+      ],
+      styleSummary,
+      trendBriefJson,
+    });
+    const next = await generateSinglePost(system, user, industry, topicFocus);
+    if (!next) break;
+    current = next;
+    if (current.hook_clarity_score >= HOOK_CLARITY_MIN_SCORE) {
+      return current;
+    }
+  }
+  return current;
+}
+
+function firstPostFromParsed(parsed: unknown): unknown {
+  if (Array.isArray(parsed)) {
+    return parsed.length > 0 ? parsed[0] : null;
+  }
+  return parsed;
 }
 
 export async function generateSinglePost(
@@ -97,25 +164,43 @@ export async function generateSinglePost(
   industry: string,
   topicFocus: string,
 ): Promise<GeneratedPost | null> {
-  const genAI = new GoogleGenerativeAI(getApiKey());
-  const model = genAI.getGenerativeModel({
-    model: getModelName(),
-    systemInstruction: system,
-  });
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: user }] }],
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens: 4096,
-      responseMimeType: "application/json",
-    },
-  });
-  const text = result.response.text();
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripJsonFence(text));
-  } catch {
-    return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const text = await generateContentJson(system, user, 0.7, 4096);
+      const parsed = JSON.parse(stripJsonFence(text)) as unknown;
+      const one = firstPostFromParsed(parsed);
+      if (one === null) continue;
+      return itemToPost(one, industry, topicFocus);
+    } catch {
+      /* malformed JSON — retry once per PRD §770 */
+    }
   }
-  return itemToPost(parsed, industry, topicFocus);
+  return null;
+}
+
+/**
+ * Single entry for raw batch output: build versioned prompts, call Gemini, parse JSON (with one retry),
+ * then per-post hook self-score retries per PRD §8.2.
+ */
+export async function generateBatch(input: GenerateBatchInput): Promise<GeneratedPost[]> {
+  const parsed = generateBatchInputSchema.parse(input);
+  const { system, user } = buildPrompt({
+    industry: parsed.industry,
+    topicFocus: parsed.topicFocus,
+    numPosts: parsed.numPosts,
+    styleSummary: parsed.styleSummary,
+    trendBriefJson: parsed.trendBriefJson,
+    minChars: parsed.minChars,
+    maxChars: parsed.maxChars,
+  });
+
+  const batch = await generatePostsBatch(system, user, parsed.industry, parsed.topicFocus);
+
+  const withHooks: GeneratedPost[] = [];
+  for (const p of batch) {
+    withHooks.push(
+      await ensureHookClarity(p, parsed.industry, parsed.topicFocus, parsed.styleSummary, parsed.trendBriefJson),
+    );
+  }
+  return withHooks;
 }

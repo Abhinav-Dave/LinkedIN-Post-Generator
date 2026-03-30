@@ -1,22 +1,30 @@
+/**
+ * Agent F — Pipeline orchestration (Modules C → E → D → persistence).
+ *
+ * Flow:
+ * 1. **C (context)** — `markExpiredTrends`, style guide summary, sanitized trend brief JSON.
+ * 2. **E (generation)** — `generateBatch({ industry, topicFocus, numPosts, styleSummary, trendBriefJson, minChars?, maxChars? })`.
+ * 3. **D (lint)** — deterministic `lintPostDeterministic`; optional `lintPostWarnLlm` per post.
+ * 4. **Persistence** — `insertGeneratedPost` for each surviving post.
+ */
 import { v4 as uuidv4 } from "uuid";
-import { buildPrompt, buildRegenerateOnePrompt, getDefaultIndustryTopic } from "@/lib/prompt_builder";
+import { buildRegenerateOnePrompt, getDefaultIndustryTopic } from "@/lib/prompt_builder";
 import { styleGuideSummary, loadStyleGuide } from "@/lib/style_guide";
 import { topTrendsForPrompt, markExpiredTrends, fetchTrendBrief } from "@/lib/trend_brief";
-import { generatePostsBatch, generateSinglePost } from "@/lib/generator";
+import { generateBatch, generateSinglePost } from "@/lib/generator";
 import { insertGeneratedPost, listCorpusTexts } from "@/lib/db";
 import { lintPostDeterministic, lintPostWarnLlm } from "@/lib/linter";
 import type { GeneratedPost } from "@/lib/types";
+import type { GenerateFlowResult, RunGenerationPipelineOptions } from "@/lib/pipeline.types";
 
-export type PipelineResult = {
-  batch_id: string;
-  generated_at: string;
-  prompt_version: string;
-  posts: GeneratedPost[];
-  failed_slots: number;
-  trend_brief_freshness: string | null;
-  style_guide_only: boolean;
-  warning_message?: string;
-};
+export type { GenerateFlowResult, RunGenerationPipelineOptions } from "@/lib/pipeline.types";
+
+/** @deprecated Prefer `GenerateFlowResult` from `@/lib/pipeline.types`. */
+export type PipelineResult = GenerateFlowResult;
+
+function optPositiveInt(n: unknown): number | undefined {
+  return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : undefined;
+}
 
 async function refinePost(
   post: GeneratedPost,
@@ -46,7 +54,6 @@ async function refinePost(
 }
 
 async function fillShortBatch(
-  system: string,
   industry: string,
   topicFocus: string,
   need: number,
@@ -68,17 +75,17 @@ async function fillShortBatch(
   return extra;
 }
 
-export async function runGenerationPipeline(opts: {
-  industry?: string;
-  topic_focus?: string;
-  num_posts?: number;
-  runWarnLint?: boolean;
-}): Promise<PipelineResult> {
+/**
+ * Core orchestration: same inputs whether invoked from HTTP or tests.
+ */
+export async function runGenerationPipeline(opts: RunGenerationPipelineOptions): Promise<GenerateFlowResult> {
   markExpiredTrends();
   const { industry: dInd, topicFocus: dTop } = getDefaultIndustryTopic();
   const industry = opts.industry?.trim() || dInd;
   const topicFocus = opts.topic_focus?.trim() || dTop;
   const numPosts = Math.min(12, Math.max(1, opts.num_posts ?? 5));
+  const minChars = optPositiveInt(opts.min_chars);
+  const maxChars = optPositiveInt(opts.max_chars);
 
   const trends = topTrendsForPrompt(3, 12);
   const warning =
@@ -86,27 +93,29 @@ export async function runGenerationPipeline(opts: {
       ? "No fresh trends found — posts generated from style guide only."
       : undefined;
 
-  const { system, user } = buildPrompt({
+  const styleSummary = styleGuideSummary(loadStyleGuide());
+  const trendBriefJson = JSON.stringify(topTrendsForPrompt(3, 7));
+
+  let posts = await generateBatch({
     industry,
     topicFocus,
     numPosts,
-    minChars: 600,
-    maxChars: 2000,
+    styleSummary,
+    trendBriefJson,
+    minChars: minChars ?? 600,
+    maxChars: maxChars ?? 2000,
   });
-
-  let posts = await generatePostsBatch(system, user, industry, topicFocus);
   if (posts.length === 0) {
     throw new Error("Model returned no parseable posts");
   }
 
   if (posts.length < numPosts) {
     const more = await fillShortBatch(
-      system,
       industry,
       topicFocus,
       numPosts - posts.length,
-      styleGuideSummary(loadStyleGuide()),
-      JSON.stringify(topTrendsForPrompt(3, 7)),
+      styleSummary,
+      trendBriefJson,
     );
     posts = [...posts, ...more];
   }
@@ -114,8 +123,6 @@ export async function runGenerationPipeline(opts: {
   posts = posts.slice(0, numPosts);
 
   const corpus = listCorpusTexts();
-  const styleSummary = styleGuideSummary(loadStyleGuide());
-  const trendBriefJson = JSON.stringify(topTrendsForPrompt(3, 7));
 
   const final: GeneratedPost[] = [];
   let failed = 0;
@@ -181,4 +188,26 @@ export async function runGenerationPipeline(opts: {
     style_guide_only: trends.length === 0,
     warning_message: warning,
   };
+}
+
+/**
+ * `POST /api/generate` entry: reads JSON body (never logged) and runs the full pipeline.
+ * Accepts the standard Web `Request`; `NextRequest` is compatible.
+ */
+export async function runGenerateFlow(req: Request): Promise<GenerateFlowResult> {
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    /* empty or invalid JSON — defaults apply */
+  }
+
+  return runGenerationPipeline({
+    industry: typeof body.industry === "string" ? body.industry : undefined,
+    topic_focus: typeof body.topic_focus === "string" ? body.topic_focus : undefined,
+    num_posts: typeof body.num_posts === "number" ? body.num_posts : undefined,
+    runWarnLint: body.skip_warn_lint !== true,
+    min_chars: optPositiveInt(body.min_chars),
+    max_chars: optPositiveInt(body.max_chars),
+  });
 }

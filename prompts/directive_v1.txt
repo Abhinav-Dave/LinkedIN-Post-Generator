@@ -1,13 +1,108 @@
-Generate exactly [N] distinct LinkedIn posts.
-Industry: [INDUSTRY]
-Topic focus: [TOPIC_FOCUS]
-Audience: mid-to-senior ICs, founders, PMs in B2B SaaS — skeptical of hype.
+You are generating high-performance LinkedIn posts designed to compete with top-tier B2B creator content.
 
-Composition target across the batch:
-- 1–2 trend_reaction (only if a trend item fits; set trend_source to that URL, else use post_type workflow and trend_source "none")
-- 1–2 workflow
-- 1 contrarian
-- 0–1 mini_case_study
-- 0–1 question
+Do not produce generic, vague, repetitive, or templated posts.
 
-Return JSON only: a JSON array of post objects. No markdown fences.
+INPUTS
+N = [N]
+INDUSTRY = [INDUSTRY]
+TOPIC_FOCUS = [TOPIC_FOCUS]
+
+Audience:
+Mid-to-senior ICs, founders, and PMs in B2B SaaS.
+They are skeptical of hype, reward specificity, and ignore generic advice.
+
+STEP 1 - INTERNAL BATCH PLAN
+Before writing, internally plan exactly [N] posts.
+
+Target batch mix:
+- 1-2 trend_reaction posts only if a provided trend clearly fits
+- 1-2 workflow posts
+- exactly 1 contrarian post
+- 0-1 mini_case_study post
+- 0-1 question post
+
+Internal planning requirements:
+- No duplicate angles
+- No repeated hook patterns across the batch unless necessary
+- Each post should explore a different insight, workflow, tradeoff, or observation
+- If no trend clearly fits, reduce trend_reaction count and use workflow/question instead
+
+Do not output the plan.
+
+STEP 2 - POST QUALITY RULES
+For each post:
+
+Hook:
+- The first line should be specific and concrete
+- The first line should create curiosity or tension
+- Prefer a number, named tool, dated event, or sharp claim when natural
+- Do not start with banned openers
+- Use "Unpopular opinion:" only if post_type is "contrarian" and the body genuinely challenges a mainstream assumption
+
+Body:
+- Keep total body length within the required range for this run
+- Use LinkedIn-native line breaks
+- Keep rhythm tight: short paragraphs, readable spacing, minimal filler
+- Include at least one credibility signal such as:
+  - a specific number
+  - a named tool
+  - a dated event
+  - a concrete workflow step
+- Include at least one of:
+  - a concrete workflow
+  - a meaningful tradeoff
+  - an unexpected insight
+  - a specific inefficiency, mistake, or failure mode
+- Do not drift into generic advice-blog language
+- Do not invent URLs, trends, statistics, or experiences not grounded in the provided inputs
+
+Trend handling:
+- Only use trend data from the provided Trend Brief
+- If a post uses a trend, set post_type to "trend_reaction"
+- If a post uses a trend, set trend_source to the exact source URL from the Trend Brief
+- If no trend is used, set trend_source to "none"
+
+STEP 3 - INTERNAL SELF-CHECK
+Before finalizing each post, internally score the hook:
+- Specificity: 0-4
+- Curiosity gap: 0-3
+- Clarity / no banned phrasing: 0-3
+
+If the total is below 7, rewrite the hook before continuing.
+
+Do not output failed drafts or intermediate reasoning.
+
+STEP 4 - FINAL BATCH VALIDATION
+Before returning output, verify:
+- Exactly [N] posts are present
+- The batch mix follows the target distribution as closely as possible
+- No obvious duplicate ideas or repeated angles
+- Every post includes at least one credibility signal
+- Every post has a strong, specific opening line
+- Every object is valid for the required JSON schema
+
+OUTPUT FORMAT
+Return only a JSON array.
+
+Each object must follow:
+{
+  "post_id": "<uuid>",
+  "industry": "<string>",
+  "topic_focus": "<string>",
+  "hook_archetype": "<string>",
+  "hook_clarity_score": <integer 1-10>,
+  "body": "<full post text>",
+  "char_count": <integer>,
+  "credibility_signals": ["<signal 1>"],
+  "trend_source": "<URL or 'none'>",
+  "post_type": "trend_reaction | workflow | contrarian | mini_case_study | question",
+  "cta_type": "none | soft | direct | link",
+  "lint_flags": [],
+  "generated_at": "<ISO 8601>"
+}
+
+HARD CONSTRAINTS
+- JSON only
+- No markdown
+- No explanations
+- No comments

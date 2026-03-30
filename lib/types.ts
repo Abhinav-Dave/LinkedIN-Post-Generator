@@ -72,3 +72,84 @@ export type GenerateRequestBody = {
   num_posts?: number;
   voice_preset?: string;
 };
+
+// --- Style guide (PRD §13.4) — machine-readable JSON ----------------------------
+
+const hookArchetypeSchema = z.object({
+  name: z.string(),
+  structure: z.string(),
+  example_scaffold: z.string(),
+});
+
+export const styleGuideSchema = z.object({
+  version: z.string(),
+  generated_at: z.string(),
+  hook_archetypes: z.array(hookArchetypeSchema),
+  length_range: z.object({
+    p25: z.number(),
+    p75: z.number(),
+  }),
+  line_break_density_norm: z.number(),
+  credibility_moves: z.array(z.string()),
+  cta_patterns: z.object({
+    high_engagement: z.array(z.string()),
+    low_engagement: z.array(z.string()),
+  }),
+  anti_patterns: z.array(z.string()),
+});
+
+export type StyleGuide = z.infer<typeof styleGuideSchema>;
+
+/** Sanitized row safe to embed in prompts (after TTL + `sanitizeForPromptInjection`). */
+export type TrendBriefItem = {
+  trend_id: string;
+  headline: string;
+  source_url: string;
+  source_name: string;
+  published_at: string;
+  relevance_score: number;
+  content_angle: string | null;
+  cached_at: string;
+};
+
+/** Result of `getActiveTrends()` for downstream prompt/API layers. */
+export type ActiveTrendsBrief = {
+  /** Top-N by relevance for prompts (e.g. 5–7). */
+  items: TrendBriefItem[];
+  /** All rows matching TTL + `expired = 0` before applying `limit` (for ≥4 freshness checks). */
+  totalActiveInWindow: number;
+  /** ISO 8601 — max `cached_at` among returned `items`, or null if empty. */
+  briefCachedAt: string | null;
+  /** True when `briefCachedAt` is within 24h (see `trend_ttl`). */
+  cacheFresh: boolean;
+};
+
+// --- LLM batch generation (PRD §8.2 hook self-score + retries) -----------------
+
+/** Minimum self-reported hook clarity before we skip generator-side retries. */
+export const HOOK_CLARITY_MIN_SCORE = 7 as const;
+
+/** Regeneration attempts after the first model output (max 2 retries = 3 tries total). */
+export const HOOK_SCORE_MAX_RETRIES = 2 as const;
+
+export type GenerateBatchInput = {
+  industry: string;
+  topicFocus: string;
+  numPosts: number;
+  /** From `getStyleGuideSummary` / `styleGuideSummary` — no DB reads in prompt_builder. */
+  styleSummary: string;
+  /** JSON string of trend brief items or envelope for prompts. */
+  trendBriefJson: string;
+  minChars?: number;
+  maxChars?: number;
+};
+
+export const generateBatchInputSchema = z.object({
+  industry: z.string().min(1),
+  topicFocus: z.string().min(1),
+  numPosts: z.number().int().min(1).max(12),
+  styleSummary: z.string(),
+  trendBriefJson: z.string(),
+  minChars: z.number().int().positive().optional(),
+  maxChars: z.number().int().positive().optional(),
+});

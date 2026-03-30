@@ -1,7 +1,11 @@
 """
 Fetch Hacker News, Reddit, and GitHub Trending into SQLite `trend_items`.
 
-Run from repo root: `python ingestion/trend_ingestor.py`
+Keywords and Reddit subs come from ``config/topics.json`` (see ``reddit_subreddits``,
+``relevance_keywords``, ``topic_focus``). DB path matches Node ``lib/db.ts`` via
+``CORPUS_DB_PATH`` or default ``data/corpus.db``.
+
+Run from repo root: ``python ingestion/trend_ingestor.py``
 """
 
 from __future__ import annotations
@@ -15,13 +19,23 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
 import httpx
 from bs4 import BeautifulSoup
 
-ROOT = Path(__file__).resolve().parent.parent
-DATA = ROOT / "data"
-DB_PATH = DATA / "corpus.db"
+from ingestion.paths import ROOT, get_corpus_db_path
+
 CONFIG_PATH = ROOT / "config" / "topics.json"
+
+DEFAULT_TOPICS: dict[str, Any] = {
+    "industry": "general",
+    "topic_focus": ["AI", "LLM", "SaaS", "automation"],
+    "relevance_keywords": ["AI", "LLM", "workflow", "SaaS", "automation", "agent"],
+    "reddit_subreddits": ["LocalLLaMA", "MachineLearning", "cscareerquestions"],
+}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS trend_items (
@@ -41,9 +55,27 @@ CREATE INDEX IF NOT EXISTS idx_trend_expired ON trend_items(expired);
 
 
 def load_topics() -> dict[str, Any]:
-    """Load industry and keyword configuration."""
-    with CONFIG_PATH.open(encoding="utf-8") as f:
-        return json.load(f)
+    """Load industry, keywords, and Reddit subreddits from config; fallback if missing or invalid."""
+    if not CONFIG_PATH.is_file():
+        print(f"topics config missing at {CONFIG_PATH}; using built-in fallback.", file=sys.stderr)
+        return dict(DEFAULT_TOPICS)
+    try:
+        with CONFIG_PATH.open(encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"topics config unreadable ({exc}); using built-in fallback.", file=sys.stderr)
+        return dict(DEFAULT_TOPICS)
+    if not isinstance(data, dict):
+        print("topics config must be a JSON object; using built-in fallback.", file=sys.stderr)
+        return dict(DEFAULT_TOPICS)
+    merged = dict(DEFAULT_TOPICS)
+    merged.update(data)
+    subs = merged.get("reddit_subreddits")
+    if not isinstance(subs, list) or not subs:
+        merged["reddit_subreddits"] = list(DEFAULT_TOPICS["reddit_subreddits"])
+    else:
+        merged["reddit_subreddits"] = [str(s).strip() for s in subs if str(s).strip()]
+    return merged
 
 
 def stable_id(*parts: str) -> str:
@@ -72,6 +104,7 @@ def relevance_score(title: str, cfg: dict[str, Any]) -> int:
 
 
 def ensure_db(conn: sqlite3.Connection) -> None:
+    """Create trend tables and indexes if they do not exist."""
     conn.executescript(SCHEMA)
 
 
@@ -208,10 +241,12 @@ def fetch_github_trending(client: httpx.Client, conn: sqlite3.Connection, cfg: d
 
 
 def main() -> None:
-    DATA.mkdir(parents=True, exist_ok=True)
+    """Run all trend sources, upsert into SQLite, and log row counts."""
+    db_path = get_corpus_db_path()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
     cfg = load_topics()
     cached_at = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(db_path)
     try:
         ensure_db(conn)
         mark_expired(conn)
@@ -257,13 +292,19 @@ def main() -> None:
                 hn += 1
             total += hn
 
-            for sub in ("LocalLLaMA", "MachineLearning", "cscareerquestions"):
-                total += fetch_reddit_sub(client, conn, cfg, sub, cached_at)
+            subs = cfg.get("reddit_subreddits") or DEFAULT_TOPICS["reddit_subreddits"]
+            for sub in subs:
+                total += fetch_reddit_sub(client, conn, cfg, str(sub), cached_at)
 
             total += fetch_github_trending(client, conn, cfg, cached_at)
 
         conn.commit()
-        print(f"Ingested {total} trend rows (relevance>=3). DB: {DB_PATH}")
+        if total == 0:
+            print(
+                f"No trend rows passed relevance>=3 this run (sources may be empty or keywords too strict). DB: {db_path}",
+                file=sys.stderr,
+            )
+        print(f"Ingested {total} trend rows (relevance>=3). DB: {db_path}")
     finally:
         conn.close()
 

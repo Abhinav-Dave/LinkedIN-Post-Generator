@@ -1,3 +1,4 @@
+// Trigrams = three consecutive words (token trigrams), not character n-grams; text is lowercased and punctuation folded to spaces before tokenizing.
 const norm = (s: string) =>
   s
     .toLowerCase()
@@ -17,7 +18,7 @@ function trigrams(tokens: string[]): Set<string> {
   return out;
 }
 
-/** Jaccard similarity of word trigram sets. */
+/** Jaccard index of overlapping word-trigram sets between two strings. */
 export function trigramJaccard(a: string, b: string): number {
   const A = trigrams(norm(a));
   const B = trigrams(norm(b));

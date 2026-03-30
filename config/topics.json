@@ -1,5 +1,10 @@
 {
   "industry": "Computer Science / B2B SaaS",
+  "reddit_subreddits": [
+    "LocalLLaMA",
+    "MachineLearning",
+    "cscareerquestions"
+  ],
   "topic_focus": [
     "Claude",
     "Excel",

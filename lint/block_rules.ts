@@ -4,6 +4,11 @@ export type BlockContext = {
   postType?: string;
 };
 
+/**
+ * PRD §10.1 — first line must not start with any of these (case-insensitive).
+ * Exact strings: 'In today's world', 'Excited to share', 'Hot take:', 'Game changer',
+ * 'Let that sink in', 'I'm humbled'. 'Unpopular opinion:' is handled below when post is not contrarian.
+ */
 const BANNED_STARTS = [
   "in today's world",
   "excited to share",
@@ -12,9 +17,10 @@ const BANNED_STARTS = [
   "let that sink in",
   "i'm humbled",
   "im humbled",
-];
+] as const;
 
 const MIN_CHARS = 600;
+/** PRD §10.1 — BLOCK when trigram Jaccard vs any corpus post is strictly greater than 40%. */
 const SIM_BLOCK = 0.4;
 
 function firstLineLower(body: string): string {

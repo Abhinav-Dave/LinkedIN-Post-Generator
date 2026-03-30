@@ -6,11 +6,34 @@ import { maxCorpusSimilarity } from "@/lib/trigram";
 import type { GeneratedPost, LintFlag } from "@/lib/types";
 import { lintFlagSchema } from "@/lib/types";
 
+export type DeterministicLintContext = {
+  corpusTexts: string[];
+};
+
 export type LintResult = {
   blockReasons: string[];
   warnFlags: LintFlag[];
   maxSimilarity: number;
 };
+
+/**
+ * PRD §10.1 deterministic BLOCK rules + corpus trigram similarity (threshold > 0.4).
+ * Returns human-readable BLOCK reason strings for retries and UI.
+ */
+export function runDeterministicLint(
+  post: GeneratedPost,
+  ctx: DeterministicLintContext,
+): { blockReasons: string[]; maxSimilarity: number } {
+  const maxSimilarity = ctx.corpusTexts.length
+    ? maxCorpusSimilarity(post.body, ctx.corpusTexts)
+    : 0;
+  const blockReasons = runBlockRules(post.body, {
+    hookClarityScore: post.hook_clarity_score,
+    maxCorpusSimilarity: maxSimilarity,
+    postType: post.post_type,
+  });
+  return { blockReasons, maxSimilarity };
+}
 
 function getApiKey(): string | null {
   const k = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
@@ -18,18 +41,15 @@ function getApiKey(): string | null {
 }
 
 function cheapModel(): string {
-  return process.env.GEMINI_MODEL_CHEAP?.trim() || process.env.GEMINI_MODEL_MAIN?.trim() || "gemini-2.0-flash";
+  return process.env.GEMINI_MODEL_CHEAP?.trim() || process.env.GEMINI_MODEL_MAIN?.trim() || "gemini-2.5-flash";
 }
 
 export function lintPostDeterministic(
   post: GeneratedPost,
   corpusTexts: string[],
 ): LintResult {
-  const maxSim = corpusTexts.length ? maxCorpusSimilarity(post.body, corpusTexts) : 0;
-  const blockReasons = runBlockRules(post.body, {
-    hookClarityScore: post.hook_clarity_score,
-    maxCorpusSimilarity: maxSim,
-    postType: post.post_type,
+  const { blockReasons, maxSimilarity: maxSim } = runDeterministicLint(post, {
+    corpusTexts,
   });
 
   const warnFlags: LintFlag[] = [];

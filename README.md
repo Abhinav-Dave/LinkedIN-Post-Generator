@@ -27,6 +27,10 @@ B2B LinkedIn batch generator (Next.js 14 App Router + SQLite + Gemini) aligned w
 - `better-sqlite3` is native; if Vercel build/runtime fails, switch to a hosted DB (e.g. Turso) or run the app on a Node server with a writable `data/corpus.db`.
 - Do not expose API keys to the client; generation runs only in API routes.
 
+## Lint / similarity
+
+Deterministic BLOCK rules and trigram Jaccard corpus similarity live in TypeScript only (`lint/block_rules.ts`, `lib/trigram.ts`, `lib/linter.ts` — `runDeterministicLint`). There is no separate Python similarity module; ingestion scripts stay under `ingestion/`.
+
 ## Prompts
 
 Versioned under `prompts/` (e.g. `system_v1.txt`, `generation_v1.txt`). Active style guide: `data/style_guide.json`.

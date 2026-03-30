@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
+import { lintPostDeterministic } from "@/lib/linter";
+import { generatedPostSchema } from "@/lib/types";
 import { runBlockRules, hasCredibilitySignal } from "../../lint/block_rules";
 
 const filler = (n: number) => "word ".repeat(Math.ceil(n / 5));
+
+describe("lintPostDeterministic", () => {
+  it("adds WARN when trend_reaction has trend_source none", () => {
+    const body = `${filler(700)} We use Claude and cut latency by 15%.`;
+    const post = generatedPostSchema.parse({
+      body,
+      hook_clarity_score: 8,
+      post_type: "trend_reaction",
+      trend_source: "none",
+    });
+    const { blockReasons, warnFlags } = lintPostDeterministic(post, []);
+    expect(blockReasons).toEqual([]);
+    expect(warnFlags.some((w) => w.rule.includes("missing_trend"))).toBe(true);
+  });
+});
 
 describe("block_rules", () => {
   it("flags banned opener", () => {

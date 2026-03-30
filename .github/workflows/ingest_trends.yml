@@ -14,4 +14,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: python ingestion/trend_ingestor.py
+      - name: Ingest trends into SQLite
+        env:
+          CORPUS_DB_PATH: data/corpus.db
+        run: python ingestion/trend_ingestor.py
