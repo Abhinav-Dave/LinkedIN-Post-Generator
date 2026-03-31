@@ -40,11 +40,50 @@ async function canReachSupabase(): Promise<boolean> {
   }
 }
 
+function supabaseProjectRef(url: string | undefined): string | null {
+  if (!url) return null;
+  try {
+    const host = new URL(url).hostname;
+    const m = host.match(/^([^.]+)\.supabase\.co$/i);
+    return m ? m[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+async function getSupabaseTrendCount(): Promise<number | null> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  const base = url.endsWith("/") ? url.slice(0, -1) : url;
+  const endpoint = `${base}/rest/v1/trend_items?select=trend_id`;
+  try {
+    const r = await fetch(endpoint, {
+      headers: {
+        apikey: key,
+        Authorization: `Bearer ${key}`,
+        Prefer: "count=exact",
+        Range: "0-0",
+      },
+      cache: "no-store",
+    });
+    if (!r.ok) return null;
+    const contentRange = r.headers.get("content-range") || "";
+    const match = contentRange.match(/\/(\d+|\*)$/);
+    if (!match || match[1] === "*") return null;
+    return Number.parseInt(match[1], 10);
+  } catch {
+    return null;
+  }
+}
+
 export async function GET() {
   const usingSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
   const dbPath = process.env.CORPUS_DB_PATH || "data/corpus.db";
   const dbExists = fs.existsSync(dbPath);
   const supabaseReachable = await canReachSupabase();
+  const supabaseRef = supabaseProjectRef(process.env.SUPABASE_URL);
+  const supabaseTrendCount = await getSupabaseTrendCount();
 
   const requiredEnv = {
     NODE_ENV: Boolean(process.env.NODE_ENV),
@@ -66,6 +105,8 @@ export async function GET() {
         db_path: dbPath,
         db_exists: dbExists,
         supabase_reachable: supabaseReachable,
+        supabase_project_ref: supabaseRef,
+        supabase_trend_count: supabaseTrendCount,
         python_runtime_present: hasPythonRuntime(),
         required_env_present: requiredEnv,
       },
