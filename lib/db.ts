@@ -470,16 +470,18 @@ export async function listGeneratedPosts(limit = 100): Promise<GeneratedPostRow[
 export async function listTrendItems(minRelevance: number, limit: number): Promise<TrendItemRow[]> {
   if (hasSupabaseConfig()) {
     const sb = getSupabase();
+    const cap = Math.min(Math.max(limit, 1), 1000);
     const { data, error } = await sb
       .from("trend_items")
       .select("trend_id,headline,source_url,source_name,published_at,relevance_score,content_angle,cached_at,expired")
-      .eq("expired", 0)
-      .gte("relevance_score", minRelevance)
       .order("relevance_score", { ascending: false })
       .order("published_at", { ascending: false })
-      .limit(limit);
+      .limit(cap);
     if (error) throw error;
-    return (data as TrendItemRow[]) ?? [];
+    const rows = (data as TrendItemRow[]) ?? [];
+    // Keep server query permissive to avoid type-mismatch edge cases in PostgREST filters;
+    // enforce relevance threshold deterministically in app code.
+    return rows.filter((row) => Number(row.relevance_score) >= minRelevance);
   }
   const db = getDb();
   return db
