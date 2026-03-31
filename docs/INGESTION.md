@@ -58,7 +58,16 @@ pip install -r requirements.txt
 python ingestion/trend_ingestor.py
 ```
 
-**GitHub Actions:** `.github/workflows/ingest_trends.yml` (2 cron runs/day + `workflow_dispatch`), Python **3.11**, `APIFY_API_TOKEN` from repo secret.
+**GitHub Actions:** `.github/workflows/ingest_trends.yml` (every 12 hours + `workflow_dispatch`), Python **3.11**, `APIFY_API_TOKEN` from repo secret.
+
+### Demo safety stop (cost control)
+
+The trends workflow includes a guard env:
+
+- `DEMO_STOP_AFTER_UTC` (ISO UTC timestamp, e.g. `2026-04-01T23:59:59Z`)
+
+When current UTC time passes this value, scheduled runs auto-skip and print a skip reason in logs.  
+Use this to prevent continuous paid ingestion during demos.
 
 **Supabase env for trend ingest (recommended):**
 - `SUPABASE_URL`
