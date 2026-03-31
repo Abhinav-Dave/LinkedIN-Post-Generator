@@ -30,6 +30,9 @@ function normalizeTimestamp(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) return trimmed;
   let out = trimmed.replace(" ", "T");
+  // JS Date parsing is inconsistent with microsecond precision (6 digits).
+  // Normalize fractional seconds to milliseconds.
+  out = out.replace(/\.(\d{3})\d+/, ".$1");
   // Convert timezone suffix "+00" / "-07" into RFC3339 form "+00:00" / "-07:00".
   if (/[+-]\d{2}$/.test(out)) {
     out = `${out}:00`;
