@@ -20,6 +20,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
@@ -105,7 +106,8 @@ class SupabaseTrendStore:
         with httpx.Client() as client:
             if compact.startswith("update trend_items set expired = 1 where published_at < ?"):
                 cutoff = str(params[0])
-                url = f"{self._base_url}/trend_items?published_at=lt.{cutoff}"
+                cutoff_encoded = quote(cutoff, safe="")
+                url = f"{self._base_url}/trend_items?published_at=lt.{cutoff_encoded}"
                 resp = client.patch(url, headers=self._headers, json={"expired": 1}, timeout=30.0)
                 resp.raise_for_status()
                 return None
