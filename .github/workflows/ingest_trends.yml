@@ -3,7 +3,7 @@ name: ingest-trends
 on:
   schedule:
     - cron: "0 */12 * * *"
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 jobs:
   run:
