@@ -181,6 +181,46 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 
 `npm run lint`, `npx tsc --noEmit`, `npm test` (incl. new unit tests).
 
+### Update — 2026-03-30 (Voice-quality WARN heuristics, deterministic-only)
+
+**Scope used:** `lib/linter.ts` only (allowed paths respected; no BLOCK/similarity contract changes).
+
+**Why**
+- Add lightweight, low-FP **WARN-only** signals for AI-ish tone patterns so downstream UI/review can nudge rewrites without blocking generation.
+
+**What changed**
+- Added deterministic helper in `lib/linter.ts`: `extractVoiceWarnFlags(body)`.
+- Wired into `lintPostDeterministic` via:
+  - `const warnFlags: LintFlag[] = [...extractVoiceWarnFlags(post.body)]`
+- Existing WARN (`missing_trend_link`) remains; BLOCK path (`runDeterministicLint` + `runBlockRules`) unchanged.
+
+**New WARN flags**
+- `WARN: ai_voice_templated_opener_list_cta_combo`
+  - Triggers on strong combo only: templated opener + >=3 numbered list lines + generic CTA near end.
+- `WARN: ai_voice_template_placeholder_artifact`
+  - Detects leaked template markers (`[insert ...]`, `<...>`, `replace X`).
+- `WARN: ai_voice_buzzword_stacking_no_specifics`
+  - >=3 buzzwords + no numeric specifics.
+- `WARN: ai_voice_engagement_bait_stack`
+  - Engagement bait phrase + >=4 hashtags.
+
+**Examples these detect**
+- `Here are 3 lessons ... 1) ... 2) ... 3) ... Thoughts?` → templated combo.
+- `We helped [insert audience] improve <KPI>.` → placeholder artifact.
+- `Unlock seamless cutting-edge synergy to supercharge outcomes.` → buzzword stacking.
+- `Follow for more #ai #startup #growth #founder #product` → engagement bait stack.
+
+**Concerns / follow-ups**
+- Heuristics are intentionally conservative, but edge false-positives can occur on legitimate list posts or campaign-style posts.
+- Threshold tuning candidates if needed: hashtag cutoff (`>=4`), buzzword count (`>=3`), CTA phrase list breadth.
+- No tests were added in this pass (path constraints + lightweight change); coverage can be added by Agent I if needed.
+
+**Verification (this pass)**
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+- `npm test` ✅ (31 passed)
+- `npm run build` ✅
+
 ---
 
 ## Agent E — LLM (Gemini) + prompts
@@ -221,6 +261,70 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 
 `npm run lint`, `npx tsc --noEmit`, `npm test` — all passed after changes.
 
+### Update — 2026-03-30 (Voice/Humanization pass)
+
+**Scope used:** `prompts/**` only (no pipeline/routes/UI edits in this pass).
+
+**Why**
+- Reduce “AI-sounding” outputs while preserving PRD constraints (grounding, credibility, JSON contract, hook scoring).
+
+**Files touched**
+
+| Path | Change |
+| ---- | ------ |
+| `prompts/generation_v1.txt` | Added anti-AI-tic bans + positive voice guidance in Post quality section. |
+| `prompts/directive_v1.txt` | Added matching cadence/humanization rules in STEP 2 body rules. |
+
+**What changed (prompt behavior)**
+- Added explicit bans for:
+  - over-formal theatrics (`"This is not hypothetical/theory"` style),
+  - rigid numbered consultant lists unless requested,
+  - fake citation-y phrasing (`"research shows"`, `"studies prove"`) without provided source,
+  - repetitive transition/outro templates and repeated closing questions.
+- Added positive style instructions:
+  - conversational cadence with mixed sentence length,
+  - optional sharp opinion or mild humor/sarcasm when relevant,
+  - concrete but not robotic tone.
+
+**Expected output delta**
+- Less templated/sterile “AI cadence,” fewer formulaic listicles.
+- More human rhythm and voice while still specific, credible, and schema-safe.
+
+**Concerns / follow-ups**
+- This is prompt-layer steering; occasional robotic outputs may still appear and should be handled by future eval/tuning (Agent I).
+- Added voice flexibility can increase variance; deterministic lint remains the guardrail for banned openers/credibility/length.
+- No new observability for “voice quality” yet (optional: add QA rubric or sample-based scoring in tests, Agent I).
+
+**Verification (this pass)**
+- `npm test` ✅ (31/31)
+- `npm run build` ✅
+- `npm run lint` ✅
+- `npx tsc --noEmit` ✅
+
+### Update — plain_spartan voice preset
+
+**Scope:** `prompts/plain_spartan_overlay_v1.txt`, `lib/types.ts` (append), `lib/prompt_builder.ts`, `lib/generator.ts`, `tests/unit/prompt_builder.test.ts`. **Not touched:** `lib/pipeline.ts`, `app/**` (Agent E cannot wire API → generator per handoff).
+
+**What it does**
+- Optional **`voicePreset: "plain_spartan"`** on **`GenerateBatchInput`** / **`generateBatchInputSchema`** (constant **`VOICE_PRESET_PLAIN_SPARTAN`** in `types.ts`).
+- When set, **`buildPrompt`** appends **`plain_spartan_overlay_v1.txt`** after `generation_v1` + `directive_v1` (JSON contract unchanged).
+- **`buildRegenerateOnePrompt`** accepts optional **`voicePreset`** so hook retries and regen paths keep the same overlay.
+- **`generateBatch`** passes **`voicePreset`** into **`buildPrompt`** and **`ensureHookClarity`** → **`buildRegenerateOnePrompt`**.
+
+**Overlay contents (summary)**
+- Spartan, short sentences, active voice, you/your, plain-text bullets, no em dash (U+2014), no semicolons in body, no markdown/hashtags; banned-word list + **rewrite if any banned term appears** before final JSON.
+- Instruction file avoids typing a literal em dash in examples.
+
+**Notes for downstream**
+- **Agent F** wires **`voice_preset`** → **`generateBatch({ …, voicePreset })`** when the body is **`"plain_spartan"`** (see **`VOICE_PRESET_PLAIN_SPARTAN`**); **`refinePost` / `fillShortBatch`** pass **`voicePreset`** into **`buildRegenerateOnePrompt`** for parity with Agent E.
+
+**Concerns**
+- Banned list includes very common tokens (**e.g.** `that`, `it`, `may`); may over-constrain fluency — tune list if outputs degrade.
+
+**Verification**
+- `npm test` ✅ (38 passed at time of change)
+- `npm run build` ✅
+
 ---
 
 ## Agent F — Pipeline (orchestration)
@@ -229,17 +333,17 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 
 ### Summary
 
-- **Orchestration order:** (C) `markExpiredTrends` + `styleGuideSummary(loadStyleGuide())` + `topTrendsForPrompt` → JSON string for prompts → (E) **`generateBatch({ industry, topicFocus, numPosts, styleSummary, trendBriefJson, minChars?, maxChars? })`** → short-batch top-up via `generateSinglePost` + `buildRegenerateOnePrompt` if needed → deterministic **refine** loop (BLOCK → regenerate) → (D) `lintPostDeterministic` + optional `lintPostWarnLlm` (`skip_warn_lint` / `runWarnLint: false`) → **persistence** `insertGeneratedPost` per surviving post.
+- **Orchestration order:** (C) `markExpiredTrends` + `styleGuideSummary(loadStyleGuide())` + `topTrendsForPrompt` → JSON string for prompts → (E) **`generateBatch({ …, voicePreset? })`** where **`voicePreset`** = **`VOICE_PRESET_PLAIN_SPARTAN`** only when **`voice_preset`** is `"plain_spartan"` on the wire → short-batch top-up + **refine** both pass **`voicePreset`** into **`buildRegenerateOnePrompt`** → (D) `lintPostDeterministic` + optional `lintPostWarnLlm` → **persistence** `insertGeneratedPost` per surviving post.
 - **Exports:** `runGenerateFlow(req: Request)` — parses body (no logging of payload); `runGenerationPipeline(opts)` — same flow for tests/scripts. Types: `GenerateFlowResult`, `RunGenerationPipelineOptions` from `pipeline.types.ts`; `PipelineResult` = deprecated alias.
-- **Defaults:** `minChars`/`maxChars` for batch → **600 / 2000** if `min_chars` / `max_chars` omitted or invalid on the wire; only **positive integers** accepted from JSON.
+- **Defaults:** `minChars`/`maxChars` for batch → **600 / 2000** if `min_chars` / `max_chars` omitted or invalid on the wire; only **positive integers** accepted from JSON. Unknown **`voice_preset`** strings → ignored (no overlay).
 - **Response shape:** PRD §14 (`batch_id`, `generated_at`, `prompt_version`, `posts`, `failed_slots`, `trend_brief_freshness`) plus `style_guide_only`, `warning_message` when no fresh trends.
 
 ### Files touched
 
 | Path | Change |
 | ---- | ------ |
-| `lib/pipeline.types.ts` | **New** — options + `GenerateFlowResult`. |
-| `lib/pipeline.ts` | Module docstring (flow for agents); implementation + `runGenerateFlow`. |
+| `lib/pipeline.types.ts` | Options + `GenerateFlowResult`; `voice_preset` on options. |
+| `lib/pipeline.ts` | `voicePresetFromApi` → `generateBatch` + regenerate paths; `runGenerateFlow` reads `voice_preset`. |
 | `app/api/generate/route.ts` | Uses `runGenerateFlow(req)` after rate limit; removed duplicate `req.json()` block. |
 
 ### Notes for downstream agents
@@ -255,7 +359,8 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 
 ### Verification (Agent F)
 
-`npm run lint`, `npx tsc --noEmit`, `npx vitest run` — all green after changes.
+- Initial: `npm run lint`, `npx tsc --noEmit`, `npx vitest run` — green.
+- **2026-03-30** — `voice_preset` wiring: same checks green.
 
 ---
 
@@ -281,14 +386,14 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 | `app/api/generate/route.ts` | **429** body + human `message`. |
 | `app/api/trends/route.ts` | DB/API **try/catch** + JSON error. |
 
-**Unchanged by G:** `app/api/trends/refresh/route.ts` (still placeholder POST).
+**Unchanged by G:** `app/api/trends/refresh/route.ts` (implemented, not a no-op placeholder): runs `python ingestion/trend_ingestor.py` via `spawnSync` and returns `ok` / `ingest_failed` / `spawn_failed`.
 
 ### Notes for downstream agents
 
 - **H (UI):** call **`GET /api/trends`**, **`POST /api/generate`** per PRD; handle **429** / new **502** on corpus if you add admin ingest UI.
 - **I (tests):** `tests/integration/ingestion.test.ts` still stub; good targets: webhook secret matrix, mock `fetch` for Apify dataset.
 - **Apify not activated on webhook URL yet** (local); secret in `.env` is fine for dev — production needs matching Apify webhook config.
-- **`voice_preset`** in PRD §14 body — **not** wired in `runGenerateFlow` (Agent F / later).
+- **`voice_preset`** — wired by **Agent F** in `runGenerateFlow` → **`generateBatch`** / **`buildRegenerateOnePrompt`** (only **`plain_spartan`** supported today).
 
 ### Concerns / follow-ups
 
@@ -304,51 +409,63 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 
 ## Agent H — UI
 
-**Date:** 2026-03-29. **Handoff:** `docs/AGENT_HANDOFFS.md` → Agent H. **Scope:** `app/page.tsx`, `app/layout.tsx` only (allowed to touch `tailwind.config.ts` / `app/globals.css` if needed — **not** modified this pass except layout token class). **Forbidden:** `lib/pipeline.ts` (or any pipeline internals); client uses **`fetch('/api/...')`** only.
+**Date:** 2026-03-30. **Handoff:** `docs/AGENT_HANDOFFS.md` → Agent H. **Scope:** `app/page.tsx`, `app/layout.tsx` only (allowed to touch `tailwind.config.ts` / `app/globals.css` if needed — not required). **Forbidden:** `lib/pipeline.ts` internals; client uses **`fetch('/api/...')`** only.
 
 ### Summary
 
 - **Trend brief sidebar:** `GET /api/trends` on mount; **skeleton** when list empty + loading; **stale-while-refresh** (skeleton only if `trends.length === 0` so Refresh keeps prior rows). **`trendsError`** for failed GET. Per-item **Source** link (`source_url`, `noopener noreferrer`), date snippet from `published_at`.
-- **Refresh:** `POST /api/trends/refresh` → reload trends; **`refreshingTrends`** disables control; errors → `trendsError`. (Route remains **no-op** per Agent G — UI still satisfies PRD “button triggers reload” behavior.)
-- **Generate:** `POST /api/generate` with `{ num_posts }`; **`generateError`** separate from trends; handles **429** `rate_limited` + `retryAfterSec`; **generating** state with placeholder panel + disabled inputs.
+- **Refresh:** `POST /api/trends/refresh` → reload trends; **`refreshingTrends`** disables control; errors → `trendsError`. Route currently triggers server-side Python ingestion (`ingestion/trend_ingestor.py`) and then UI re-fetches trends.
+- **Generate:** `POST /api/generate` with `{ num_posts, voice_preset }`; **`generateError`** separate from trends; handles **429** `rate_limited` + `retryAfterSec`; **generating** state with placeholder panel + disabled inputs.
 - **Posts:** Renders `lint_flags` with **WARN** (amber) vs **BLOCK** (red) badges, rule, optional `suggestion` / `excerpt`. Shows **`style_guide_only`**, **`warning_message`**, batch meta line; **empty batch** message if `batch_id` but `posts.length === 0`.
+- **Voice control (optional enhancement):** Added `Voice` selector with presets:
+  - `human_balanced` (default)
+  - `sharp_sarcastic`
+  - `professional_warm`
+  Sent in payload as `voice_preset`; includes inline TODO note that backend may ignore until fully wired.
 - **Security:** No `process.env` or API keys in client code; only same-origin `/api/*`.
 
 ### Files touched
 
 | Path | Change |
 | ---- | ------ |
-| `app/page.tsx` | Client UI: loading/error split, lint flag rows, generate + trend flows, accessibility-friendly alerts (`role="alert"` where needed). |
+| `app/page.tsx` | Client UI: loading/error split, lint flag rows, generate + trend flows, accessibility-friendly alerts (`role="alert"` where needed), **voice selector + `voice_preset` payload**. |
 | `app/layout.tsx` | `body` classes: `bg-[var(--bg)] text-[var(--text)]` aligned with `globals.css` tokens. |
 
 ### Notes for downstream agents
 
 - **I (QA):** PRD checklist §796–805 maps here: Generate, trend list + Refresh, WARN/BLOCK visible, no secrets in **this** page source. Hook score / credibility / banned opener checks are **data validations** (manual or automated tests), not UI assertions.
 - **G:** UI assumes **`GET /api/trends`** success shape `{ items, cached_at }` and error `{ error?, message? }`; generate success matches **`GenerateFlowResult`** (posts + optional `warning_message`, `style_guide_only`, etc.).
+- **F/G voice wiring:** UI now always sends `voice_preset`. If backend ignores it, behavior is unchanged by design.
 - **Types** in `page.tsx` are **local duplicates** of API contracts — if response schema changes, update page types or share a small `types/api-client.ts` (out of H scope unless agreed).
 
 ### Concerns / follow-ups
 
 - **`npm audit --audit-level=high`:** Transitive **Next / vitest / eslint / glob** issues — **pre-existing**; not fixed in UI pass.
 - **`aria-busy`** on list/button was **removed** — Edge Tools linter flagged expression form; **`disabled` + live region** used instead for generate placeholder.
-- **True “force refresh”** of trend data still requires **ingestion** (Python/Cron); API refresh is **placeholder** until G/backend adds real fetch.
+- **Refresh runtime dependency:** `POST /api/trends/refresh` depends on Python 3 + `requirements.txt` on the host runtime. In environments without Python (typical serverless), refresh can fail with `spawn_failed`; script/runtime failures return `ingest_failed` (502).
+- **Serverless fit:** Current refresh path shells out to local Python (`spawnSync`) and is not ideal without a worker/runtime that includes Python + deps.
+- **Typecheck footgun:** `npx tsc --noEmit` can fail before build due to `.next/types` include; run after `npm run build` (or keep `.next/types` generated in dev env).
 
 ### Verification (Agent H)
 
-`npm run lint`, `npx tsc --noEmit` — clean after changes.
+`npm run lint`, `npm test` (36/36), `npm run build`, then `npx tsc --noEmit` — clean after changes.
 
 ---
 
 ## Agent I — Tests + QA
 
-**Date:** 2026-03-29. **Handoff:** `docs/AGENT_HANDOFFS.md` → Agent I. **Scope:** `tests/**`, `vitest.config.ts`, `tests/fixtures/**`. **Production:** unchanged (mocks only — no new exports/hooks in `lib/**`).
+**Date:** 2026-03-30. **Handoff:** `docs/AGENT_HANDOFFS.md` → Agent I. **Scope:** `tests/**`, `vitest.config.ts`, `tests/fixtures/**`. **Production:** unchanged (mocks only — no new exports/hooks in `lib/**`).
 
 ### Summary
 
-- **PRD §20 — `generate.test.ts`:** Full **`POST /api/generate`** path via **`NextRequest`**, isolated SQLite (`CORPUS_DB_PATH` temp dir + `closeDb()` before open), **`vi.mock("@/lib/generator")`** so no real Gemini. Asserts **`GenerateFlowResult`**-shaped JSON (Zod in test): `batch_id`, `posts[]`, `failed_slots`, etc.; **`generateBatch`** called with `industry` / `topicFocus` / `numPosts`. Integration sets **`skip_warn_lint: true`** to avoid WARN LLM calls (no key in test).
-- **Fixtures:** `tests/fixtures/mock_llm_posts.ts` — bodies pass deterministic BLOCK rules (length, hook ≥7, credibility, opener).
-- **Unit extensions:** `prompt_builder.test.ts` — `buildRegenerateOnePrompt`, no stray `[INDUSTRY]`/`[N]`/`[MIN_CHARS]` after `buildPrompt`; `linter.test.ts` — `lintPostDeterministic` WARN for `trend_reaction` + `trend_source: "none"`.
-- **Existing:** `vitest.config.ts` (unchanged pattern): `tests/**/*.test.ts`, `@` → repo root.
+- **PRD §20 — `generate.test.ts`:** Full **`POST /api/generate`** path via **`NextRequest`**, isolated SQLite (`CORPUS_DB_PATH` temp dir + `closeDb()`), **`vi.mock("@/lib/generator")`** (no real Gemini). Asserts **`GenerateFlowResult`**-shaped JSON and verifies `generateBatch` args (`industry`, `topicFocus`, `numPosts`). Uses `skip_warn_lint: true` to keep integration deterministic/offline.
+- **Voice-pass prompt coverage:** Added assertions that assembled prompt output includes anti-generic / anti-AI-writing directives and explicit human-voice cadence constraints from prompt templates.
+- **Deterministic WARN coverage (Agent D additions):** Added tests for all new `ai_voice_*` warnings in `lintPostDeterministic`:
+  - `ai_voice_templated_opener_list_cta_combo`
+  - `ai_voice_template_placeholder_artifact`
+  - `ai_voice_buzzword_stacking_no_specifics`
+  - `ai_voice_engagement_bait_stack`
+- **Fixtures:** `tests/fixtures/mock_llm_posts.ts` still provides valid long-form mock posts that pass BLOCK rules and support integration tests.
 
 ### Files touched (Agent I only)
 
@@ -356,24 +473,26 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 | ---- | ------ |
 | `tests/fixtures/mock_llm_posts.ts` | **New** — `makeMockGeneratedPost` / `makeMockPostBatch`. |
 | `tests/integration/generate.test.ts` | **Expanded** — rate-limit tests kept; added mocked-LLM integration + schema assertions; `NextRequest` for `tsc`. |
-| `tests/unit/prompt_builder.test.ts` | **Expanded** — +2 tests (regenerate prompt, placeholder safety). |
-| `tests/unit/linter.test.ts` | **Expanded** — +1 describe (`lintPostDeterministic` WARN). |
+| `tests/unit/prompt_builder.test.ts` | **Expanded** — + voice-pass directive assertions in assembled prompt output. |
+| `tests/unit/linter.test.ts` | **Expanded** — + deterministic `ai_voice_*` WARN tests (plus existing `missing_trend_link`). |
 
 ### Notes for downstream agents
 
 - **Extending generate integration:** Adjust mock **`generateBatch`** return shape if **`GeneratedPost` / pipeline** changes; keep fixtures passing **`runBlockRules` + corpus similarity** (empty corpus = OK).
 - **WARN LLM path:** Not covered end-to-end (would need env key or injector); deterministic lint + mocked batch is the stable baseline.
 - **DB isolation:** Integration `beforeAll` calls **`closeDb()`** then sets **`CORPUS_DB_PATH`** — important if other tests share a worker and rely on singleton reset.
+- **Prompt contract checks:** Current tests assert literal directive strings from `prompts/generation_v1.txt` and `prompts/directive_v1.txt`; if prompt wording changes, update test assertions (prefer key phrase checks over full paragraph matching).
 
 ### Concerns / follow-ups
 
 - **`npm audit --audit-level=high`:** Still reports transitive **Next / vitest→vite→esbuild / eslint→glob** issues; **not** remediated here (would bump majors / Next patch — coordinate with product owner).
 - **Mock drift:** If **`runGenerateFlow`** stops calling **`generateBatch`** or args rename, integration test must follow.
 - **E2E / Playwright:** Out of scope; manual PRD §796–805 checklist remains for H + human QA.
+- **False positives in voice WARN tests:** Patterns are heuristic by design; if Agent D tunes regex thresholds, update synthetic bodies to keep tests semantically aligned (rule intent over exact wording).
 
 ### Verification (Agent I)
 
-`npm test` (23 tests), `npm run lint`, `npx tsc --noEmit` — all clean after Agent I changes.
+`npm run lint`, `npx tsc --noEmit`, `npm test` (**36 tests**), `npm run build` — all clean after latest Agent I updates.
 
 ---
 

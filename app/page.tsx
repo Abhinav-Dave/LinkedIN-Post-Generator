@@ -2,6 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+const VOICE_PRESETS = [
+  { value: "human_balanced", label: "Human Balanced" },
+  { value: "sharp_sarcastic", label: "Sharp & Sarcastic" },
+  { value: "professional_warm", label: "Professional Warm" },
+] as const;
+
 type TrendItem = {
   trend_id: string;
   headline: string;
@@ -84,6 +90,9 @@ export default function Page() {
   const [trendsError, setTrendsError] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [numPosts, setNumPosts] = useState(5);
+  const [voicePreset, setVoicePreset] = useState<(typeof VOICE_PRESETS)[number]["value"]>(
+    "human_balanced",
+  );
 
   const loadTrends = useCallback(async () => {
     setLoadingTrends(true);
@@ -150,7 +159,7 @@ export default function Page() {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ num_posts: numPosts }),
+        body: JSON.stringify({ num_posts: numPosts, voice_preset: voicePreset }),
       });
       const data = (await res.json()) as GenerateResponse;
       if (!res.ok) {
@@ -280,6 +289,23 @@ export default function Page() {
               className="mt-1 w-24 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-100 disabled:opacity-50"
             />
           </label>
+          <label className="flex flex-col text-sm text-slate-300">
+            Voice
+            <select
+              value={voicePreset}
+              onChange={(e) =>
+                setVoicePreset(e.target.value as (typeof VOICE_PRESETS)[number]["value"])
+              }
+              disabled={generating}
+              className="mt-1 min-w-48 rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-100 disabled:opacity-50"
+            >
+              {VOICE_PRESETS.map((preset) => (
+                <option key={preset.value} value={preset.value}>
+                  {preset.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
             onClick={() => void generate()}
@@ -289,6 +315,10 @@ export default function Page() {
             {generating ? "Generating..." : "Generate"}
           </button>
         </div>
+        <p className="text-xs text-slate-500">
+          Voice preset is sent as <code>voice_preset</code>. TODO: if backend ignores it, keep
+          current default behavior until API wiring is completed.
+        </p>
 
         {generateError ? (
           <div

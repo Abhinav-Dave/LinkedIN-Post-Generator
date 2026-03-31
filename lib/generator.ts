@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { v4 as uuidv4 } from "uuid";
 import { buildPrompt, buildRegenerateOnePrompt } from "@/lib/prompt_builder";
-import type { GeneratedPost, GenerateBatchInput } from "@/lib/types";
+import type { GeneratedPost, GenerateBatchInput, VoicePresetPlainSpartan } from "@/lib/types";
 import {
   generatedPostSchema,
   generateBatchInputSchema,
@@ -126,6 +126,7 @@ async function ensureHookClarity(
   topicFocus: string,
   styleSummary: string,
   trendBriefJson: string,
+  voicePreset?: VoicePresetPlainSpartan,
 ): Promise<GeneratedPost> {
   let current = post;
   if (current.hook_clarity_score >= HOOK_CLARITY_MIN_SCORE) {
@@ -140,6 +141,7 @@ async function ensureHookClarity(
       ],
       styleSummary,
       trendBriefJson,
+      voicePreset,
     });
     const next = await generateSinglePost(system, user, industry, topicFocus);
     if (!next) break;
@@ -192,6 +194,7 @@ export async function generateBatch(input: GenerateBatchInput): Promise<Generate
     trendBriefJson: parsed.trendBriefJson,
     minChars: parsed.minChars,
     maxChars: parsed.maxChars,
+    voicePreset: parsed.voicePreset,
   });
 
   const batch = await generatePostsBatch(system, user, parsed.industry, parsed.topicFocus);
@@ -199,7 +202,14 @@ export async function generateBatch(input: GenerateBatchInput): Promise<Generate
   const withHooks: GeneratedPost[] = [];
   for (const p of batch) {
     withHooks.push(
-      await ensureHookClarity(p, parsed.industry, parsed.topicFocus, parsed.styleSummary, parsed.trendBriefJson),
+      await ensureHookClarity(
+        p,
+        parsed.industry,
+        parsed.topicFocus,
+        parsed.styleSummary,
+        parsed.trendBriefJson,
+        parsed.voicePreset,
+      ),
     );
   }
   return withHooks;

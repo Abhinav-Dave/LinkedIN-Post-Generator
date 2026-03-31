@@ -18,6 +18,62 @@ describe("lintPostDeterministic", () => {
     expect(blockReasons).toEqual([]);
     expect(warnFlags.some((w) => w.rule.includes("missing_trend"))).toBe(true);
   });
+
+  it("adds ai_voice_templated_opener_list_cta_combo when opener/list/CTA pattern appears", () => {
+    const body = [
+      "Here's how to scale your SaaS content engine.",
+      "",
+      "1. Capture every workflow in one place.",
+      "2. Reuse prompts across teams.",
+      "3. Standardize review loops.",
+      "",
+      `${filler(620)} What do you think?`,
+    ].join("\n");
+    const post = generatedPostSchema.parse({
+      body,
+      hook_clarity_score: 8,
+      post_type: "workflow",
+      trend_source: "none",
+    });
+    const { warnFlags } = lintPostDeterministic(post, []);
+    expect(warnFlags.some((w) => w.rule === "WARN: ai_voice_templated_opener_list_cta_combo")).toBe(true);
+  });
+
+  it("adds ai_voice_template_placeholder_artifact when template tokens leak", () => {
+    const body = `${filler(700)} Replace TOOL_NAME with your stack and add [RESULT] before posting.`;
+    const post = generatedPostSchema.parse({
+      body,
+      hook_clarity_score: 8,
+      post_type: "workflow",
+      trend_source: "none",
+    });
+    const { warnFlags } = lintPostDeterministic(post, []);
+    expect(warnFlags.some((w) => w.rule === "WARN: ai_voice_template_placeholder_artifact")).toBe(true);
+  });
+
+  it("adds ai_voice_buzzword_stacking_no_specifics for buzzword-heavy non-specific copy", () => {
+    const body = `${filler(650)} We unlock seamless synergy to leverage cutting-edge systems and supercharge teams for game-changing outcomes.`;
+    const post = generatedPostSchema.parse({
+      body,
+      hook_clarity_score: 8,
+      post_type: "workflow",
+      trend_source: "none",
+    });
+    const { warnFlags } = lintPostDeterministic(post, []);
+    expect(warnFlags.some((w) => w.rule === "WARN: ai_voice_buzzword_stacking_no_specifics")).toBe(true);
+  });
+
+  it("adds ai_voice_engagement_bait_stack for engagement bait plus hashtag stuffing", () => {
+    const body = `${filler(650)} Follow for more and share this post #ai #saas #automation #workflow`;
+    const post = generatedPostSchema.parse({
+      body,
+      hook_clarity_score: 8,
+      post_type: "workflow",
+      trend_source: "none",
+    });
+    const { warnFlags } = lintPostDeterministic(post, []);
+    expect(warnFlags.some((w) => w.rule === "WARN: ai_voice_engagement_bait_stack")).toBe(true);
+  });
 });
 
 describe("block_rules", () => {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildPrompt, buildRegenerateOnePrompt } from "@/lib/prompt_builder";
+import { VOICE_PRESET_PLAIN_SPARTAN } from "@/lib/types";
 
 describe("prompt_builder", () => {
   it("assembles system and user layers", () => {
@@ -54,5 +55,54 @@ describe("prompt_builder", () => {
     expect(user).not.toContain("[MAX_CHARS]");
     expect(user).toContain('Computer / B2B "; synthetic');
     expect(user).toContain("<extra>edge</extra>");
+  });
+
+  it("includes anti-AI and human-voice directives in the assembled prompt", () => {
+    const { user } = buildPrompt({
+      industry: "Computer Science / B2B SaaS",
+      topicFocus: "Claude + Excel",
+      numPosts: 2,
+      styleSummary: "style summary",
+      trendBriefJson: "[]",
+      minChars: 600,
+      maxChars: 2000,
+    });
+
+    // Anti-generic / anti-templated voice directives.
+    expect(user).toContain("Do not produce generic, vague, repetitive, or advice-blog-style content.");
+    expect(user).toContain("Do not drift into generic advice-blog language");
+    expect(user).toContain("Do not use fake citation-style phrasing");
+
+    // Human cadence directives.
+    expect(user).toContain("Concrete is required, but delivery should feel human, not robotic or over-formal.");
+    expect(user).toContain("Use conversational cadence with mixed sentence lengths");
+    expect(user).toContain("Do not produce generic, vague, repetitive, or templated posts.");
+  });
+
+  it("appends plain_spartan overlay when voicePreset is plain_spartan", () => {
+    const { user } = buildPrompt({
+      industry: "B2B",
+      topicFocus: "APIs",
+      numPosts: 2,
+      styleSummary: "summary",
+      trendBriefJson: "[]",
+      voicePreset: VOICE_PRESET_PLAIN_SPARTAN,
+    });
+    expect(user).toContain("VOICE PRESET: plain_spartan");
+    expect(user).toContain("BANNED WORDS AND PHRASES");
+    expect(user).toContain("em dash");
+  });
+
+  it("buildRegenerateOnePrompt includes plain_spartan overlay when requested", () => {
+    const { user } = buildRegenerateOnePrompt({
+      industry: "B2B",
+      topicFocus: "APIs",
+      errors: ["BLOCK: test"],
+      styleSummary: "S",
+      trendBriefJson: "[]",
+      voicePreset: VOICE_PRESET_PLAIN_SPARTAN,
+    });
+    expect(user).toContain("VOICE PRESET: plain_spartan");
+    expect(user).toContain("BLOCK: test");
   });
 });

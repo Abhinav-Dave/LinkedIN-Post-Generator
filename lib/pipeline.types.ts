@@ -13,6 +13,11 @@ export type RunGenerationPipelineOptions = {
   /** Passed to `generateBatch` when set (positive integers only). */
   min_chars?: number;
   max_chars?: number;
+  /**
+   * PRD §14 `voice_preset`. Only `"plain_spartan"` is applied (see `VOICE_PRESET_PLAIN_SPARTAN`);
+   * other values are ignored (no overlay).
+   */
+  voice_preset?: string;
 };
 
 /**

@@ -43,6 +43,8 @@ Body:
 - Keep total body length within the required range for this run
 - Use LinkedIn-native line breaks
 - Keep rhythm tight: short paragraphs, readable spacing, minimal filler
+- Use conversational cadence with mixed sentence lengths (short punch + longer thought where useful)
+- Include one optional sharp opinion or mild humor/sarcasm only if it supports clarity
 - Include at least one credibility signal such as:
   - a specific number
   - a named tool
@@ -55,6 +57,10 @@ Body:
   - a specific inefficiency, mistake, or failure mode
 - Do not drift into generic advice-blog language
 - Do not invent URLs, trends, statistics, or experiences not grounded in the provided inputs
+- Do not use over-formal "boardroom" phrasing like "This is not hypothetical" / "This is not theory"
+- Do not force rigid numbered consultant lists unless explicitly requested
+- Do not use fake citation-y phrasing (e.g., "research shows", "studies say") without provided sources
+- Avoid repetitive transition/outro patterns across the batch (same opener bridge, same closing question)
 
 Trend handling:
 - Only use trend data from the provided Trend Brief

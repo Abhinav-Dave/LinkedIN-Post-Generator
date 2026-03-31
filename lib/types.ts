@@ -132,6 +132,10 @@ export const HOOK_CLARITY_MIN_SCORE = 7 as const;
 /** Regeneration attempts after the first model output (max 2 retries = 3 tries total). */
 export const HOOK_SCORE_MAX_RETRIES = 2 as const;
 
+/** Supported voice presets for batch generation (extend as new overlays are added). */
+export const VOICE_PRESET_PLAIN_SPARTAN = "plain_spartan" as const;
+export type VoicePresetPlainSpartan = typeof VOICE_PRESET_PLAIN_SPARTAN;
+
 export type GenerateBatchInput = {
   industry: string;
   topicFocus: string;
@@ -142,6 +146,7 @@ export type GenerateBatchInput = {
   trendBriefJson: string;
   minChars?: number;
   maxChars?: number;
+  voicePreset?: VoicePresetPlainSpartan;
 };
 
 export const generateBatchInputSchema = z.object({
@@ -152,4 +157,6 @@ export const generateBatchInputSchema = z.object({
   trendBriefJson: z.string(),
   minChars: z.number().int().positive().optional(),
   maxChars: z.number().int().positive().optional(),
+  /** When set, `lib/prompt_builder` appends `prompts/plain_spartan_overlay_v1.txt`. */
+  voicePreset: z.literal(VOICE_PRESET_PLAIN_SPARTAN).optional(),
 });

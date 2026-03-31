@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { VOICE_PRESET_PLAIN_SPARTAN, type VoicePresetPlainSpartan } from "@/lib/types";
 
 function readPromptFile(name: string): string {
   const p = path.join(process.cwd(), "prompts", name);
@@ -15,6 +16,8 @@ export type BuildPromptParams = {
   trendBriefJson: string;
   minChars?: number;
   maxChars?: number;
+  /** Appends `plain_spartan_overlay_v1.txt` when set to `plain_spartan`. */
+  voicePreset?: VoicePresetPlainSpartan;
 };
 
 export function buildPrompt(params: BuildPromptParams): { system: string; user: string } {
@@ -40,7 +43,11 @@ export function buildPrompt(params: BuildPromptParams): { system: string; user: 
     .replaceAll("[INDUSTRY]", params.industry)
     .replaceAll("[TOPIC_FOCUS]", params.topicFocus);
 
-  const user = `${generation}\n\n---\n${directive}`;
+  let user = `${generation}\n\n---\n${directive}`;
+
+  if (params.voicePreset === VOICE_PRESET_PLAIN_SPARTAN) {
+    user += `\n\n${readPromptFile("plain_spartan_overlay_v1.txt")}`;
+  }
 
   return { system, user };
 }
@@ -53,6 +60,7 @@ export type BuildRegenerateOnePromptArgs = {
   trendBriefJson: string;
   minChars?: number;
   maxChars?: number;
+  voicePreset?: VoicePresetPlainSpartan;
 };
 
 /**
@@ -70,6 +78,7 @@ export function buildRegenerateOnePrompt(args: BuildRegenerateOnePromptArgs): { 
     trendBriefJson: args.trendBriefJson,
     minChars: minC,
     maxChars: maxC,
+    voicePreset: args.voicePreset,
   });
 
   let suffix = readPromptFile("regenerate_single_suffix_v1.txt");

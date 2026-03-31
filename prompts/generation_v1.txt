@@ -41,6 +41,13 @@ For each post:
 - Avoid filler, vague motivation language, and generic takeaways.
 - Prefer concrete workflows, tradeoffs, observations, inefficiencies, mistakes, or surprising insights.
 - The body should sound like practitioner-level thinking, not templated content marketing.
+- Keep cadence conversational: mix short and medium/long sentences for natural rhythm.
+- One optional sharp opinion or light joke/sarcastic line is allowed when it fits the point.
+- Concrete is required, but delivery should feel human, not robotic or over-formal.
+- Do not use over-formal theatrics like "This is not hypothetical" / "This is not theory".
+- Do not default to rigid numbered consultant-style lists unless the user explicitly asks for a list format.
+- Do not use fake citation-style phrasing like "according to the data", "research shows", "studies prove" without a provided source.
+- Avoid repetitive transition/conclusion templates (e.g., "That said,", "In conclusion,", "The takeaway is", "What do you think?" at the end of every post).
 
 5. Trend usage
 - Use trend information only from the provided Trend Brief JSON.

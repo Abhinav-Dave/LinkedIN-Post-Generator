@@ -3,7 +3,7 @@
  *
  * Flow:
  * 1. **C (context)** — `markExpiredTrends`, style guide summary, sanitized trend brief JSON.
- * 2. **E (generation)** — `generateBatch({ industry, topicFocus, numPosts, styleSummary, trendBriefJson, minChars?, maxChars? })`.
+ * 2. **E (generation)** — `generateBatch({ …, voicePreset? })` (e.g. `plain_spartan` overlay when `voice_preset` matches).
  * 3. **D (lint)** — deterministic `lintPostDeterministic`; optional `lintPostWarnLlm` per post.
  * 4. **Persistence** — `insertGeneratedPost` for each surviving post.
  */
@@ -14,7 +14,8 @@ import { topTrendsForPrompt, markExpiredTrends, fetchTrendBrief } from "@/lib/tr
 import { generateBatch, generateSinglePost } from "@/lib/generator";
 import { insertGeneratedPost, listCorpusTexts } from "@/lib/db";
 import { lintPostDeterministic, lintPostWarnLlm } from "@/lib/linter";
-import type { GeneratedPost } from "@/lib/types";
+import type { GeneratedPost, VoicePresetPlainSpartan } from "@/lib/types";
+import { VOICE_PRESET_PLAIN_SPARTAN } from "@/lib/types";
 import type { GenerateFlowResult, RunGenerationPipelineOptions } from "@/lib/pipeline.types";
 
 export type { GenerateFlowResult, RunGenerationPipelineOptions } from "@/lib/pipeline.types";
@@ -26,6 +27,15 @@ function optPositiveInt(n: unknown): number | undefined {
   return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/** Only known presets pass through; avoids invalid `generateBatch` zod errors. */
+function voicePresetFromApi(v: unknown): VoicePresetPlainSpartan | undefined {
+  if (v === VOICE_PRESET_PLAIN_SPARTAN) return VOICE_PRESET_PLAIN_SPARTAN;
+  if (typeof v === "string" && v.trim() === VOICE_PRESET_PLAIN_SPARTAN) {
+    return VOICE_PRESET_PLAIN_SPARTAN;
+  }
+  return undefined;
+}
+
 async function refinePost(
   post: GeneratedPost,
   corpus: string[],
@@ -33,6 +43,7 @@ async function refinePost(
   topicFocus: string,
   styleSummary: string,
   trendBriefJson: string,
+  voicePreset: VoicePresetPlainSpartan | undefined,
 ): Promise<GeneratedPost | null> {
   let current = post;
   for (let i = 0; i < 3; i++) {
@@ -45,6 +56,7 @@ async function refinePost(
       errors: blockReasons,
       styleSummary,
       trendBriefJson,
+      voicePreset,
     });
     const next = await generateSinglePost(system, user, industry, topicFocus);
     if (!next) return null;
@@ -59,6 +71,7 @@ async function fillShortBatch(
   need: number,
   styleSummary: string,
   trendBriefJson: string,
+  voicePreset: VoicePresetPlainSpartan | undefined,
 ): Promise<GeneratedPost[]> {
   const extra: GeneratedPost[] = [];
   for (let i = 0; i < need; i++) {
@@ -68,6 +81,7 @@ async function fillShortBatch(
       errors: [`Generate an additional distinct post (${i + 1}/${need}) for the same batch.`],
       styleSummary,
       trendBriefJson,
+      voicePreset,
     });
     const p = await generateSinglePost(s2, u2, industry, topicFocus);
     if (p) extra.push(p);
@@ -86,6 +100,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
   const numPosts = Math.min(12, Math.max(1, opts.num_posts ?? 5));
   const minChars = optPositiveInt(opts.min_chars);
   const maxChars = optPositiveInt(opts.max_chars);
+  const voicePreset = voicePresetFromApi(opts.voice_preset);
 
   const trends = topTrendsForPrompt(3, 12);
   const warning =
@@ -104,6 +119,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
     trendBriefJson,
     minChars: minChars ?? 600,
     maxChars: maxChars ?? 2000,
+    voicePreset,
   });
   if (posts.length === 0) {
     throw new Error("Model returned no parseable posts");
@@ -116,6 +132,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
       numPosts - posts.length,
       styleSummary,
       trendBriefJson,
+      voicePreset,
     );
     posts = [...posts, ...more];
   }
@@ -129,7 +146,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
 
   const refined: GeneratedPost[] = [];
   for (const p of posts) {
-    const ok = await refinePost(p, corpus, industry, topicFocus, styleSummary, trendBriefJson);
+    const ok = await refinePost(p, corpus, industry, topicFocus, styleSummary, trendBriefJson, voicePreset);
     if (!ok) {
       failed += 1;
       continue;
@@ -209,5 +226,6 @@ export async function runGenerateFlow(req: Request): Promise<GenerateFlowResult>
     runWarnLint: body.skip_warn_lint !== true,
     min_chars: optPositiveInt(body.min_chars),
     max_chars: optPositiveInt(body.max_chars),
+    voice_preset: typeof body.voice_preset === "string" ? body.voice_preset : undefined,
   });
 }
