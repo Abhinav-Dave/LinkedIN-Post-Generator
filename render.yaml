@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: linkedin-post-generator
+    env: docker
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: APIFY_API_TOKEN
+        sync: false
+      - key: APIFY_DATASET_ID
+        sync: false
+      - key: APIFY_WEBHOOK_SECRET
+        sync: false
+      - key: CORPUS_DB_PATH
+        value: /app/data/corpus.db

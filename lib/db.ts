@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { runMigrations } from "@/lib/migrations";
 import type { TrendItemRow } from "@/lib/types";
 
@@ -13,7 +14,25 @@ import type { TrendItemRow } from "@/lib/types";
  * scale-out unless you attach persistent storage or use an external database. Plan accordingly.
  */
 
-let singleton: Database.Database | null = null;
+let sqliteSingleton: Database.Database | null = null;
+let supabaseSingleton: SupabaseClient | null = null;
+
+function hasSupabaseConfig(): boolean {
+  return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function getSupabase(): SupabaseClient {
+  if (supabaseSingleton) return supabaseSingleton;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for Supabase backend");
+  }
+  supabaseSingleton = createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  return supabaseSingleton;
+}
 
 /** Optional override for tests or custom deploy layout (absolute or cwd-relative path). */
 export function getDbPath(): string {
@@ -26,7 +45,10 @@ export function getDbPath(): string {
 
 /** Canonical accessor — opens DB, runs migrations, returns singleton. */
 export function getDb(): Database.Database {
-  if (singleton) return singleton;
+  if (hasSupabaseConfig()) {
+    throw new Error("getDb() is unavailable when using Supabase backend");
+  }
+  if (sqliteSingleton) return sqliteSingleton;
 
   const file = getDbPath();
   const dir = path.dirname(file);
@@ -38,8 +60,8 @@ export function getDb(): Database.Database {
   db.pragma("journal_mode = WAL");
   runMigrations(db);
 
-  singleton = db;
-  return db;
+  sqliteSingleton = db;
+  return sqliteSingleton;
 }
 
 /** @deprecated Prefer getDb() — kept for existing call sites. */
@@ -48,10 +70,11 @@ export function openDb(): Database.Database {
 }
 
 export function closeDb(): void {
-  if (singleton) {
-    singleton.close();
-    singleton = null;
+  if (sqliteSingleton) {
+    sqliteSingleton.close();
+    sqliteSingleton = null;
   }
+  supabaseSingleton = null;
 }
 
 // --- Row types (PRD §13) ----------------------------------------------------
@@ -139,10 +162,31 @@ const insertCorpusSql = `
   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `;
 
-export function insertCorpusPost(row: CorpusPostInsert): void {
+export async function insertCorpusPost(row: CorpusPostInsert): Promise<void> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { error } = await sb.from("corpus_posts").upsert(
+      {
+        post_id: row.post_id,
+        creator_url: row.creator_url,
+        raw_text: row.raw_text,
+        hook_type: row.hook_type ?? null,
+        hook_length_chars: row.hook_length_chars ?? null,
+        post_length_chars: row.post_length_chars ?? null,
+        line_break_density: row.line_break_density ?? null,
+        uses_bullets: row.uses_bullets ?? 0,
+        credibility_signal: row.credibility_signal ?? null,
+        cta_type: row.cta_type ?? null,
+        engagement_tier: row.engagement_tier ?? "medium",
+        scraped_at: row.scraped_at,
+      },
+      { onConflict: "post_id" },
+    );
+    if (error) throw error;
+    return;
+  }
   const db = getDb();
-  const stmt = db.prepare(insertCorpusSql);
-  stmt.run(
+  db.prepare(insertCorpusSql).run(
     row.post_id,
     row.creator_url,
     row.raw_text,
@@ -158,8 +202,28 @@ export function insertCorpusPost(row: CorpusPostInsert): void {
   );
 }
 
-export function insertCorpusPosts(rows: CorpusPostInsert[]): void {
+export async function insertCorpusPosts(rows: CorpusPostInsert[]): Promise<void> {
   if (rows.length === 0) return;
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const payload = rows.map((row) => ({
+      post_id: row.post_id,
+      creator_url: row.creator_url,
+      raw_text: row.raw_text,
+      hook_type: row.hook_type ?? null,
+      hook_length_chars: row.hook_length_chars ?? null,
+      post_length_chars: row.post_length_chars ?? null,
+      line_break_density: row.line_break_density ?? null,
+      uses_bullets: row.uses_bullets ?? 0,
+      credibility_signal: row.credibility_signal ?? null,
+      cta_type: row.cta_type ?? null,
+      engagement_tier: row.engagement_tier ?? "medium",
+      scraped_at: row.scraped_at,
+    }));
+    const { error } = await sb.from("corpus_posts").upsert(payload, { onConflict: "post_id" });
+    if (error) throw error;
+    return;
+  }
   const db = getDb();
   const stmt = db.prepare(insertCorpusSql);
   const tx = db.transaction((batch: CorpusPostInsert[]) => {
@@ -183,14 +247,31 @@ export function insertCorpusPosts(rows: CorpusPostInsert[]): void {
   tx(rows);
 }
 
-export function getCorpusPost(postId: string): CorpusPostRow | undefined {
+export async function getCorpusPost(postId: string): Promise<CorpusPostRow | undefined> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { data, error } = await sb.from("corpus_posts").select("*").eq("post_id", postId).maybeSingle();
+    if (error) throw error;
+    return (data as CorpusPostRow | null) ?? undefined;
+  }
   const db = getDb();
   return db.prepare(`SELECT * FROM corpus_posts WHERE post_id = ?`).get(postId) as
     | CorpusPostRow
     | undefined;
 }
 
-export function listCorpusPosts(limit = 500): CorpusPostRow[] {
+export async function listCorpusPosts(limit = 500): Promise<CorpusPostRow[]> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const cap = Math.min(Math.max(limit, 1), 10_000);
+    const { data, error } = await sb
+      .from("corpus_posts")
+      .select("*")
+      .order("scraped_at", { ascending: false })
+      .limit(cap);
+    if (error) throw error;
+    return (data as CorpusPostRow[]) ?? [];
+  }
   const db = getDb();
   return db
     .prepare(
@@ -199,7 +280,15 @@ export function listCorpusPosts(limit = 500): CorpusPostRow[] {
     .all(Math.min(Math.max(limit, 1), 10_000)) as CorpusPostRow[];
 }
 
-export function listCorpusTexts(): string[] {
+export async function listCorpusTexts(): Promise<string[]> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { data, error } = await sb.from("corpus_posts").select("raw_text");
+    if (error) throw error;
+    return (data ?? [])
+      .map((r: unknown) => String((r as { raw_text?: string }).raw_text ?? ""))
+      .filter((v: string) => v.trim().length > 0);
+  }
   const db = getDb();
   const rows = db
     .prepare(`SELECT raw_text FROM corpus_posts WHERE length(trim(raw_text)) > 0`)
@@ -207,7 +296,13 @@ export function listCorpusTexts(): string[] {
   return rows.map((r) => r.raw_text);
 }
 
-export function countCorpusPosts(): number {
+export async function countCorpusPosts(): Promise<number> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { count, error } = await sb.from("corpus_posts").select("*", { head: true, count: "exact" });
+    if (error) throw error;
+    return count ?? 0;
+  }
   const db = getDb();
   const row = db.prepare(`SELECT COUNT(*) AS c FROM corpus_posts`).get() as { c: number };
   return row.c;
@@ -215,7 +310,26 @@ export function countCorpusPosts(): number {
 
 // --- trend_items ------------------------------------------------------------
 
-export function upsertTrendItem(row: TrendItemInsert): void {
+export async function upsertTrendItem(row: TrendItemInsert): Promise<void> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { error } = await sb.from("trend_items").upsert(
+      {
+        trend_id: row.trend_id,
+        headline: row.headline,
+        source_url: row.source_url,
+        source_name: row.source_name,
+        published_at: row.published_at,
+        relevance_score: row.relevance_score,
+        content_angle: row.content_angle,
+        cached_at: row.cached_at,
+        expired: row.expired ?? 0,
+      },
+      { onConflict: "trend_id" },
+    );
+    if (error) throw error;
+    return;
+  }
   const db = getDb();
   const expired = row.expired ?? 0;
   db.prepare(
@@ -247,7 +361,17 @@ export function upsertTrendItem(row: TrendItemInsert): void {
   );
 }
 
-export function getTrendItem(trendId: string): TrendItemRow | undefined {
+export async function getTrendItem(trendId: string): Promise<TrendItemRow | undefined> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from("trend_items")
+      .select("trend_id,headline,source_url,source_name,published_at,relevance_score,content_angle,cached_at,expired")
+      .eq("trend_id", trendId)
+      .maybeSingle();
+    if (error) throw error;
+    return (data as TrendItemRow | null) ?? undefined;
+  }
   const db = getDb();
   return db
     .prepare(
@@ -260,7 +384,30 @@ export function getTrendItem(trendId: string): TrendItemRow | undefined {
 
 // --- generated_posts --------------------------------------------------------
 
-export function insertGeneratedPost(row: GeneratedPostInsert): void {
+export async function insertGeneratedPost(row: GeneratedPostInsert): Promise<void> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { error } = await sb.from("generated_posts").upsert(
+      {
+        post_id: row.post_id,
+        industry: row.industry,
+        topic_focus: row.topic_focus,
+        hook_archetype: row.hook_archetype,
+        hook_clarity_score: row.hook_clarity_score,
+        body: row.body,
+        char_count: row.char_count,
+        credibility_signals: JSON.stringify(row.credibility_signals),
+        trend_source: row.trend_source,
+        post_type: row.post_type,
+        cta_type: row.cta_type,
+        lint_flags: JSON.stringify(row.lint_flags),
+        generated_at: row.generated_at,
+      },
+      { onConflict: "post_id" },
+    );
+    if (error) throw error;
+    return;
+  }
   try {
     const db = getDb();
     const stmt = db.prepare(`
@@ -289,16 +436,83 @@ export function insertGeneratedPost(row: GeneratedPostInsert): void {
   }
 }
 
-export function getGeneratedPost(postId: string): GeneratedPostRow | undefined {
+export async function getGeneratedPost(postId: string): Promise<GeneratedPostRow | undefined> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { data, error } = await sb.from("generated_posts").select("*").eq("post_id", postId).maybeSingle();
+    if (error) throw error;
+    return (data as GeneratedPostRow | null) ?? undefined;
+  }
   const db = getDb();
   return db.prepare(`SELECT * FROM generated_posts WHERE post_id = ?`).get(postId) as
     | GeneratedPostRow
     | undefined;
 }
 
-export function listGeneratedPosts(limit = 100): GeneratedPostRow[] {
+export async function listGeneratedPosts(limit = 100): Promise<GeneratedPostRow[]> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const cap = Math.min(Math.max(limit, 1), 5_000);
+    const { data, error } = await sb
+      .from("generated_posts")
+      .select("*")
+      .order("generated_at", { ascending: false })
+      .limit(cap);
+    if (error) throw error;
+    return (data as GeneratedPostRow[]) ?? [];
+  }
   const db = getDb();
   return db
     .prepare(`SELECT * FROM generated_posts ORDER BY generated_at DESC LIMIT ?`)
     .all(Math.min(Math.max(limit, 1), 5_000)) as GeneratedPostRow[];
+}
+
+export async function listTrendItems(minRelevance: number, limit: number): Promise<TrendItemRow[]> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { data, error } = await sb
+      .from("trend_items")
+      .select("trend_id,headline,source_url,source_name,published_at,relevance_score,content_angle,cached_at,expired")
+      .eq("expired", 0)
+      .gte("relevance_score", minRelevance)
+      .order("relevance_score", { ascending: false })
+      .order("published_at", { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return (data as TrendItemRow[]) ?? [];
+  }
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT trend_id, headline, source_url, source_name, published_at,
+              relevance_score, content_angle, cached_at, expired
+       FROM trend_items
+       WHERE expired = 0 AND relevance_score >= ?
+       ORDER BY relevance_score DESC, published_at DESC
+       LIMIT ?`,
+    )
+    .all(minRelevance, limit) as TrendItemRow[];
+}
+
+export async function markExpiredTrendsBefore(cutoffIso: string): Promise<void> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { error } = await sb.from("trend_items").update({ expired: 1 }).lt("published_at", cutoffIso);
+    if (error) throw error;
+    return;
+  }
+  const db = getDb();
+  db.prepare(`UPDATE trend_items SET expired = 1 WHERE published_at < ?`).run(cutoffIso);
+}
+
+/** Test helper for deterministic cleanup across backends. */
+export async function clearCorpusPostsForTests(): Promise<void> {
+  if (hasSupabaseConfig()) {
+    const sb = getSupabase();
+    const { error } = await sb.from("corpus_posts").delete().neq("post_id", "");
+    if (error) throw error;
+    return;
+  }
+  const db = getDb();
+  db.prepare("DELETE FROM corpus_posts").run();
 }

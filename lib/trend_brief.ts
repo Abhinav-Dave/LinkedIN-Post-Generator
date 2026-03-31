@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/db";
+import { listTrendItems, markExpiredTrendsBefore } from "@/lib/db";
 import { sanitizeForPromptInjection } from "@/lib/sanitize";
 import type { ActiveTrendsBrief, TrendBriefItem, TrendItemRow } from "@/lib/types";
 import {
@@ -11,22 +11,12 @@ import {
 const DEFAULT_ITEM_LIMIT = 7;
 const FETCH_CAP = 500;
 
-function listEligibleTrendRows(args: {
+async function listEligibleTrendRows(args: {
   minRelevance: number;
   fetchCap: number;
   nowMs: number;
-}): TrendItemRow[] {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT trend_id, headline, source_url, source_name, published_at,
-              relevance_score, content_angle, cached_at, expired
-       FROM trend_items
-       WHERE expired = 0 AND relevance_score >= ?
-       ORDER BY relevance_score DESC, published_at DESC
-       LIMIT ?`,
-    )
-    .all(args.minRelevance, args.fetchCap) as TrendItemRow[];
+}): Promise<TrendItemRow[]> {
+  const rows = await listTrendItems(args.minRelevance, args.fetchCap);
 
   return rows.filter((r) => isActiveTrendRow(r, args.nowMs));
 }
@@ -35,23 +25,22 @@ function listEligibleTrendRows(args: {
  * Marks DB rows whose `published_at` is older than the 7-day window (see `trend_ttl`).
  * Call before reads when you want `expired` flags aligned with TTL (e.g. cron or API).
  */
-export function markExpiredTrends(nowMs: number = Date.now()): void {
-  const db = getDb();
+export async function markExpiredTrends(nowMs: number = Date.now()): Promise<void> {
   const cutoffIso = new Date(nowMs - TREND_PUBLISHED_TTL_MS).toISOString();
-  db.prepare(`UPDATE trend_items SET expired = 1 WHERE published_at < ?`).run(cutoffIso);
+  await markExpiredTrendsBefore(cutoffIso);
 }
 
 /**
  * Raw rows for APIs — TTL + relevance filter; does not apply prompt sanitization
  * (callers may use `sanitizeTrendText`).
  */
-export function fetchTrendBrief(
+export async function fetchTrendBrief(
   minRelevance: number,
   maxItems: number,
   nowMs: number = Date.now(),
-): { items: TrendItemRow[]; cached_at: string | null } {
+): Promise<{ items: TrendItemRow[]; cached_at: string | null }> {
   const cap = Math.min(Math.max(maxItems, 1), 500);
-  const eligible = listEligibleTrendRows({
+  const eligible = await listEligibleTrendRows({
     minRelevance,
     fetchCap: FETCH_CAP,
     nowMs,
@@ -62,12 +51,12 @@ export function fetchTrendBrief(
 }
 
 /** Top trends for prompt JSON — sanitized, same TTL rules as `fetchTrendBrief`. */
-export function topTrendsForPrompt(
+export async function topTrendsForPrompt(
   minRelevance: number,
   limit: number,
   nowMs: number = Date.now(),
-): TrendBriefItem[] {
-  const brief = getActiveTrends({ limit, minRelevance, nowMs });
+): Promise<TrendBriefItem[]> {
+  const brief = await getActiveTrends({ limit, minRelevance, nowMs });
   return brief.items;
 }
 
@@ -75,16 +64,16 @@ export function topTrendsForPrompt(
  * Active trend brief for prompts: DB rows with `expired = 0`, `published_at` inside 7-day window
  * (see `trend_ttl`), optional min relevance, top-N by relevance, text fields sanitized.
  */
-export function getActiveTrends(options?: {
+export async function getActiveTrends(options?: {
   limit?: number;
   nowMs?: number;
   minRelevance?: number;
-}): ActiveTrendsBrief {
+}): Promise<ActiveTrendsBrief> {
   const nowMs = options?.nowMs ?? Date.now();
   const limit = Math.min(Math.max(options?.limit ?? DEFAULT_ITEM_LIMIT, 1), 50);
   const minRelevance = options?.minRelevance ?? 1;
 
-  const eligible = listEligibleTrendRows({
+  const eligible = await listEligibleTrendRows({
     minRelevance,
     fetchCap: FETCH_CAP,
     nowMs,

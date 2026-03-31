@@ -42,16 +42,16 @@ describe("lib/db", () => {
     expect(tables.map((t) => t.name)).toEqual(["corpus_posts", "generated_posts", "trend_items"]);
   });
 
-  it("typed accessors round-trip corpus, trends, generated", () => {
-    insertCorpusPost({
+  it("typed accessors round-trip corpus, trends, generated", async () => {
+    await insertCorpusPost({
       post_id: "p1",
       creator_url: "https://example.com/in/creator",
       raw_text: "Hello corpus",
       scraped_at: new Date().toISOString(),
     });
-    expect(getCorpusPost("p1")?.raw_text).toBe("Hello corpus");
+    expect((await getCorpusPost("p1"))?.raw_text).toBe("Hello corpus");
 
-    upsertTrendItem({
+    await upsertTrendItem({
       trend_id: "t1",
       headline: "HN: SQLite rocks",
       source_url: "https://news.ycombinator.com/item?id=1",
@@ -62,7 +62,7 @@ describe("lib/db", () => {
       cached_at: new Date().toISOString(),
     });
 
-    insertGeneratedPost({
+    await insertGeneratedPost({
       post_id: "g1",
       industry: "tech",
       topic_focus: "databases",
@@ -77,6 +77,6 @@ describe("lib/db", () => {
       lint_flags: [],
       generated_at: new Date().toISOString(),
     });
-    expect(getGeneratedPost("g1")?.body).toBe("Post body");
+    expect((await getGeneratedPost("g1"))?.body).toBe("Post body");
   });
 });

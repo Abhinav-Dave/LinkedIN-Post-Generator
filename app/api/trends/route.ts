@@ -7,8 +7,8 @@ export const runtime = "nodejs";
 
 export async function GET() {
   try {
-    markExpiredTrends();
-    const { items, cached_at } = fetchTrendBrief(1, 100);
+    await markExpiredTrends();
+    const { items, cached_at } = await fetchTrendBrief(1, 100);
     return NextResponse.json({
       cached_at,
       items: items.map((t) => ({

@@ -15,6 +15,17 @@ function pythonCmd(): string {
 }
 
 export async function POST() {
+  if (process.env.VERCEL === "1") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "unsupported_runtime",
+        message:
+          "Manual refresh is disabled on Vercel serverless. Use scheduled ingestion workflow for trend updates.",
+      },
+      { status: 501 },
+    );
+  }
   const script = path.join(process.cwd(), "ingestion", "trend_ingestor.py");
   const bin = pythonCmd();
   const r = spawnSync(bin, [script], {

@@ -68,7 +68,7 @@ export async function ingestCorpusFromWebhook(body: ApifyWebhookBody): Promise<{
     for (const r of rows) {
       r.scraped_at = now;
     }
-    insertCorpusPosts(rows);
+    await insertCorpusPosts(rows);
     return { posts_ingested: rows.length, source: "inline" };
   }
 
@@ -85,6 +85,6 @@ export async function ingestCorpusFromWebhook(body: ApifyWebhookBody): Promise<{
   for (const r of rows) {
     r.scraped_at = now;
   }
-  insertCorpusPosts(rows);
+  await insertCorpusPosts(rows);
   return { posts_ingested: rows.length, source: "apify_dataset" };
 }

@@ -1,6 +1,7 @@
 # Ingestion runbook (Python + GitHub Actions)
 
-This project keeps a local SQLite corpus at **`data/corpus.db`** (override with **`CORPUS_DB_PATH`**, same as `lib/db.ts`). Ingestion writes **`trend_items`** and triggers **`corpus_posts`** collection via Apify + webhook.
+Ingestion writes **`trend_items`** and triggers **`corpus_posts`** collection via Apify + webhook.
+When `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are set, trend ingestion writes to Supabase; otherwise it falls back to local SQLite (`CORPUS_DB_PATH` / `data/corpus.db`).
 
 ## Tables (see `lib/migrations.ts`)
 
@@ -57,7 +58,13 @@ pip install -r requirements.txt
 python ingestion/trend_ingestor.py
 ```
 
-**GitHub Actions:** `.github/workflows/ingest_trends.yml` (2 cron runs/day + `workflow_dispatch`), Python **3.11**, `CORPUS_DB_PATH=data/corpus.db`, `APIFY_API_TOKEN` from repo secret.
+**GitHub Actions:** `.github/workflows/ingest_trends.yml` (2 cron runs/day + `workflow_dispatch`), Python **3.11**, `APIFY_API_TOKEN` from repo secret.
+
+**Supabase env for trend ingest (recommended):**
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+If these are not set, workflow uses local SQLite at `CORPUS_DB_PATH` and data is ephemeral unless persisted.
 
 > **Note:** The DB in Actions is ephemeral unless you persist it (artifact, external store, or commit — not done by default).
 

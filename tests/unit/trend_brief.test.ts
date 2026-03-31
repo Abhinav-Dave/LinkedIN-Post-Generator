@@ -7,10 +7,10 @@ describe("trend_brief", () => {
     closeDb();
   });
 
-  it("fetchTrendBrief returns an array", () => {
+  it("fetchTrendBrief returns an array", async () => {
     openDb();
-    markExpiredTrends();
-    const { items, cached_at } = fetchTrendBrief(1, 10);
+    await markExpiredTrends();
+    const { items, cached_at } = await fetchTrendBrief(1, 10);
     expect(Array.isArray(items)).toBe(true);
     expect(cached_at === null || typeof cached_at === "string").toBe(true);
   });

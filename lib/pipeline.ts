@@ -93,7 +93,7 @@ async function fillShortBatch(
  * Core orchestration: same inputs whether invoked from HTTP or tests.
  */
 export async function runGenerationPipeline(opts: RunGenerationPipelineOptions): Promise<GenerateFlowResult> {
-  markExpiredTrends();
+  await markExpiredTrends();
   const { industry: dInd, topicFocus: dTop } = getDefaultIndustryTopic();
   const industry = opts.industry?.trim() || dInd;
   const topicFocus = opts.topic_focus?.trim() || dTop;
@@ -102,14 +102,14 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
   const maxChars = optPositiveInt(opts.max_chars);
   const voicePreset = voicePresetFromApi(opts.voice_preset);
 
-  const trends = topTrendsForPrompt(3, 12);
+  const trends = await topTrendsForPrompt(3, 12);
   const warning =
     trends.length === 0
       ? "No fresh trends found — posts generated from style guide only."
       : undefined;
 
   const styleSummary = styleGuideSummary(loadStyleGuide());
-  const trendBriefJson = JSON.stringify(topTrendsForPrompt(3, 7));
+  const trendBriefJson = JSON.stringify(await topTrendsForPrompt(3, 7));
 
   let posts = await generateBatch({
     industry,
@@ -139,7 +139,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
 
   posts = posts.slice(0, numPosts);
 
-  const corpus = listCorpusTexts();
+  const corpus = await listCorpusTexts();
 
   const final: GeneratedPost[] = [];
   let failed = 0;
@@ -172,7 +172,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
         );
 
   for (const merged of withWarns) {
-    insertGeneratedPost({
+    await insertGeneratedPost({
       post_id: merged.post_id || uuidv4(),
       industry,
       topic_focus: topicFocus,
@@ -193,7 +193,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
   const batch_id = uuidv4();
   const generated_at = new Date().toISOString();
   const guide = loadStyleGuide();
-  const { cached_at: trendCache } = fetchTrendBrief(1, 500);
+  const { cached_at: trendCache } = await fetchTrendBrief(1, 500);
 
   return {
     batch_id,

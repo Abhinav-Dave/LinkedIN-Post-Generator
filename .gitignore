@@ -1,4 +1,4 @@
-﻿# Environment files (never commit secrets)
+# Environment files (never commit secrets)
 .env
 .env.local
 .env.*.local
@@ -82,3 +82,7 @@ temp/
 # Optional local-only folders (add project-specific paths here if needed)
 personal/
 private/
+
+# Local SQLite artifacts
+data/*.db
+data/*.db-*

@@ -79,15 +79,14 @@ describe("ingestCorpusFromWebhook — inline posts", () => {
   });
 
   beforeEach(async () => {
-    const { closeDb, getDb } = await import("@/lib/db");
+    const { closeDb, clearCorpusPostsForTests } = await import("@/lib/db");
     closeDb();
-    getDb();
-    getDb().prepare("DELETE FROM corpus_posts").run();
+    await clearCorpusPostsForTests();
   });
 
   it("inserts rows from inline posts array", async () => {
     const { countCorpusPosts } = await import("@/lib/db");
-    expect(countCorpusPosts()).toBe(0);
+    expect(await countCorpusPosts()).toBe(0);
 
     const { posts_ingested, source } = await ingestCorpusFromWebhook({
       posts: [
@@ -98,14 +97,14 @@ describe("ingestCorpusFromWebhook — inline posts", () => {
 
     expect(source).toBe("inline");
     expect(posts_ingested).toBe(2);
-    expect(countCorpusPosts()). toBe(2);
+    expect(await countCorpusPosts()).toBe(2);
   });
 
   it("returns zero when inline posts array is empty and no run id", async () => {
     const { countCorpusPosts } = await import("@/lib/db");
     const r = await ingestCorpusFromWebhook({});
     expect(r.posts_ingested).toBe(0);
-    expect(countCorpusPosts()).toBe(0);
+    expect(await countCorpusPosts()).toBe(0);
   });
 });
 
@@ -137,10 +136,9 @@ describe("ingestCorpusFromWebhook — Apify dataset (mock fetch)", () => {
   beforeEach(async () => {
     vi.stubEnv("APIFY_API_TOKEN", "test-token");
     fetchMock.mockReset();
-    const { closeDb, getDb } = await import("@/lib/db");
+    const { closeDb, clearCorpusPostsForTests } = await import("@/lib/db");
     closeDb();
-    getDb();
-    getDb().prepare("DELETE FROM corpus_posts").run();
+    await clearCorpusPostsForTests();
   });
 
   it("fetches dataset items and inserts mapped posts", async () => {
@@ -153,7 +151,7 @@ describe("ingestCorpusFromWebhook — Apify dataset (mock fetch)", () => {
     });
 
     const { countCorpusPosts } = await import("@/lib/db");
-    expect(countCorpusPosts()).toBe(0);
+    expect(await countCorpusPosts()).toBe(0);
 
     const { posts_ingested, source } = await ingestCorpusFromWebhook({
       eventData: { actorRunId: "run-123" },
@@ -161,7 +159,7 @@ describe("ingestCorpusFromWebhook — Apify dataset (mock fetch)", () => {
 
     expect(source).toBe("apify_dataset");
     expect(posts_ingested).toBe(2);
-    expect(countCorpusPosts()).toBe(2);
+    expect(await countCorpusPosts()).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [calledUrl, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(calledUrl).toContain("actor-runs/run-123/dataset/items");

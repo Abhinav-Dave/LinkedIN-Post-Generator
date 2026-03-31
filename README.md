@@ -24,8 +24,10 @@ B2B LinkedIn batch generator (Next.js 14 App Router + SQLite + Gemini) aligned w
 
 ## Deploy notes
 
-- `better-sqlite3` is native; if Vercel build/runtime fails, switch to a hosted DB (e.g. Turso) or run the app on a Node server with a writable `data/corpus.db`.
+- For robust reviewer links, set `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` to use managed Postgres instead of local SQLite.
 - Do not expose API keys to the client; generation runs only in API routes.
+- For production deployment (Render + Docker, env vars, disk for SQLite, smoke tests), see `docs/DEPLOYMENT.md`.
+- Reviewer handoff checklist: `docs/REVIEWER_SMOKE_TEST.md`.
 
 ## Lint / similarity
 

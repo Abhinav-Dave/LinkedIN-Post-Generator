@@ -1,9 +1,10 @@
 """
-Fetch Hacker News, Reddit, and GitHub Trending into SQLite `trend_items`.
+Fetch Hacker News, Reddit, GitHub Trending, and Apify LinkedIn trends into `trend_items`.
 
 Keywords and Reddit subs come from ``config/topics.json`` (see ``reddit_subreddits``,
-``relevance_keywords``, ``topic_focus``). DB path matches Node ``lib/db.ts`` via
-``CORPUS_DB_PATH`` or default ``data/corpus.db``.
+``relevance_keywords``, ``topic_focus``). Persistence target:
+- Supabase when ``SUPABASE_URL`` and ``SUPABASE_SERVICE_ROLE_KEY`` are set.
+- SQLite via ``CORPUS_DB_PATH`` / ``data/corpus.db`` fallback.
 
 Run from repo root: ``python ingestion/trend_ingestor.py``
 """
@@ -77,6 +78,85 @@ CREATE TABLE IF NOT EXISTS trend_items (
 CREATE INDEX IF NOT EXISTS idx_trend_published ON trend_items(published_at);
 CREATE INDEX IF NOT EXISTS idx_trend_expired ON trend_items(expired);
 """
+
+
+class SupabaseTrendStore:
+    """Minimal SQLite-like adapter that persists trend rows to Supabase REST."""
+
+    def __init__(self, url: str, service_role_key: str) -> None:
+        base = url.rstrip("/")
+        if "/rest/v1" not in base:
+            base = f"{base}/rest/v1"
+        self._base_url = base
+        self._headers = {
+            "apikey": service_role_key,
+            "Authorization": f"Bearer {service_role_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=minimal",
+        }
+
+    def executescript(self, _sql: str) -> None:
+        """No-op for Supabase because schema is managed separately."""
+        return None
+
+    def execute(self, sql: str, params: tuple[Any, ...]) -> None:
+        """Handle known write statements used by this module."""
+        compact = " ".join(sql.split()).lower()
+        with httpx.Client() as client:
+            if compact.startswith("update trend_items set expired = 1 where published_at < ?"):
+                cutoff = str(params[0])
+                url = f"{self._base_url}/trend_items?published_at=lt.{cutoff}"
+                resp = client.patch(url, headers=self._headers, json={"expired": 1}, timeout=30.0)
+                resp.raise_for_status()
+                return None
+
+            if compact.startswith("insert into trend_items"):
+                (
+                    trend_id,
+                    headline,
+                    source_url,
+                    source_name,
+                    published_at,
+                    score,
+                    content_angle,
+                    cached_at,
+                ) = params
+                url = f"{self._base_url}/trend_items?on_conflict=trend_id"
+                payload = {
+                    "trend_id": trend_id,
+                    "headline": headline,
+                    "source_url": source_url,
+                    "source_name": source_name,
+                    "published_at": published_at,
+                    "relevance_score": score,
+                    "content_angle": content_angle,
+                    "cached_at": cached_at,
+                    "expired": 0,
+                }
+                headers = dict(self._headers)
+                headers["Prefer"] = "resolution=merge-duplicates,return=minimal"
+                resp = client.post(url, headers=headers, json=[payload], timeout=30.0)
+                resp.raise_for_status()
+                return None
+
+        raise ValueError("Unsupported SQL in SupabaseTrendStore.execute")
+
+    def commit(self) -> None:
+        """No-op for Supabase adapter."""
+        return None
+
+    def close(self) -> None:
+        """No-op for Supabase adapter."""
+        return None
+
+
+def create_trend_store(db_path: str) -> sqlite3.Connection | SupabaseTrendStore:
+    """Create persistence target: Supabase when configured, else local SQLite."""
+    supabase_url = os.environ.get("SUPABASE_URL", "").strip()
+    supabase_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if supabase_url and supabase_key:
+        return SupabaseTrendStore(supabase_url, supabase_key)
+    return sqlite3.connect(db_path)
 
 
 def load_topics() -> dict[str, Any]:
@@ -418,7 +498,7 @@ def main() -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     cfg = load_topics()
     cached_at = datetime.now(timezone.utc).isoformat()
-    conn = sqlite3.connect(db_path)
+    conn = create_trend_store(db_path)
     try:
         ensure_db(conn)
         mark_expired(conn)
