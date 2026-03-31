@@ -88,6 +88,7 @@ export default function Page() {
   const [refreshingTrends, setRefreshingTrends] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [trendsError, setTrendsError] = useState<string | null>(null);
+  const [trendsInfo, setTrendsInfo] = useState<string | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [numPosts, setNumPosts] = useState(5);
   const [voicePreset, setVoicePreset] = useState<(typeof VOICE_PRESETS)[number]["value"]>(
@@ -134,11 +135,22 @@ export default function Page() {
 
   async function refreshTrends() {
     setTrendsError(null);
+    setTrendsInfo(null);
     setRefreshingTrends(true);
     try {
       const res = await fetch("/api/trends/refresh", { method: "POST" });
       const data = (await res.json()) as { ok?: boolean; message?: string };
       if (!res.ok) {
+        // On Vercel serverless we intentionally disable manual Python refresh.
+        // Fall back to reloading the cached DB view and show an informational note.
+        if (res.status === 501) {
+          await loadTrends();
+          setTrendsInfo(
+            data.message ||
+              "Manual refresh is disabled in this deployment. Showing the latest scheduled-ingest data.",
+          );
+          return;
+        }
         setTrendsError(data.message || "Refresh request failed.");
         return;
       }
@@ -200,10 +212,10 @@ export default function Page() {
               type="button"
               onClick={() => void refreshTrends()}
               disabled={trendSidebarBusy}
-              title="Runs Python trend ingest on this machine, then reloads the list from SQLite. Requires Python 3 + pip install -r requirements.txt."
+              title="Reloads trends. In local dev this can trigger Python ingest; on serverless deployments it reloads the latest scheduled data."
               className="text-xs text-blue-400 hover:text-blue-300 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {refreshingTrends ? "Reloading..." : "Reload list"}
+              {refreshingTrends ? "Reloading..." : "Reload view"}
             </button>
           </div>
           <p className="mt-1 text-xs text-slate-500">
@@ -212,9 +224,14 @@ export default function Page() {
           </p>
           <p className="mt-0.5 text-[11px] leading-snug text-slate-600">
             Trends: HN/Reddit/GitHub -&gt; <code className="text-slate-500">trend_items</code> via{" "}
-            <code className="text-slate-500">trend_ingestor.py</code> (Reload list runs it locally). Apify is
+            <code className="text-slate-500">trend_ingestor.py</code> (manual ingest runs locally). Apify is
             for LinkedIn corpus only.
           </p>
+          {trendsInfo ? (
+            <p className="mt-2 rounded border border-blue-900/50 bg-blue-950/30 px-2 py-1.5 text-xs text-blue-200">
+              {trendsInfo}
+            </p>
+          ) : null}
           {trendsError ? (
             <p
               className="mt-2 rounded border border-red-900/50 bg-red-950/30 px-2 py-1.5 text-xs text-red-200"
