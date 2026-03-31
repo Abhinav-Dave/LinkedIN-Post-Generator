@@ -97,16 +97,21 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
   const { industry: dInd, topicFocus: dTop } = getDefaultIndustryTopic();
   const industry = opts.industry?.trim() || dInd;
   const topicFocus = opts.topic_focus?.trim() || dTop;
-  const numPosts = Math.min(12, Math.max(1, opts.num_posts ?? 5));
+  const requestedNumPosts = opts.num_posts ?? 5;
+  const hostedCap = process.env.VERCEL === "1" ? 5 : 12;
+  const numPosts = Math.min(hostedCap, Math.max(1, requestedNumPosts));
   const minChars = optPositiveInt(opts.min_chars);
   const maxChars = optPositiveInt(opts.max_chars);
   const voicePreset = voicePresetFromApi(opts.voice_preset);
 
   const trends = await topTrendsForPrompt(3, 12);
-  const warning =
-    trends.length === 0
-      ? "No fresh trends found — posts generated from style guide only."
-      : undefined;
+  const warnings: string[] = [];
+  if (trends.length === 0) {
+    warnings.push("No fresh trends found — posts generated from style guide only.");
+  }
+  if (requestedNumPosts > hostedCap) {
+    warnings.push(`Hosted runtime cap applied: generated ${numPosts} posts instead of requested ${requestedNumPosts}.`);
+  }
 
   const styleSummary = styleGuideSummary(loadStyleGuide());
   const trendBriefJson = JSON.stringify(await topTrendsForPrompt(3, 7));
@@ -203,7 +208,7 @@ export async function runGenerationPipeline(opts: RunGenerationPipelineOptions):
     failed_slots: failed,
     trend_brief_freshness: trendCache,
     style_guide_only: trends.length === 0,
-    warning_message: warning,
+    warning_message: warnings.length > 0 ? warnings.join(" ") : undefined,
   };
 }
 
