@@ -4,14 +4,20 @@
 
 **Agent implementation log:** [docs/Agent_status.md](Agent_status.md) (A–I rollout; J later).
 
-## Latest milestone (Humanization + plain_spartan voice preset)
+## Latest milestone (Apify trends source + offline integration coverage)
 
-- Prompt humanization pass in `prompts/generation_v1.txt` and `prompts/directive_v1.txt` to reduce robotic cadence and ban common AI-ish template phrasing.
-- Added optional `plain_spartan` voice overlay (`prompts/plain_spartan_overlay_v1.txt`) and wired `voice_preset` through `lib/types.ts`, `lib/prompt_builder.ts`, `lib/generator.ts`, `lib/pipeline.types.ts`, and `lib/pipeline.ts`.
-- UI wiring in `app/page.tsx` now sends `voice_preset` during generation requests.
-- Deterministic WARN heuristics expanded in `lib/linter.ts` with new `ai_voice_*` flags (WARN-only, no BLOCK rule changes).
-- Unit coverage expanded: `tests/unit/prompt_builder.test.ts` and `tests/unit/linter.test.ts` now assert voice/humanization behavior and new WARN triggers.
-- Agent execution log updated in `docs/Agent_status.md` for Agents D/E/F/H/I updates.
+- `ingestion/trend_ingestor.py` now includes an Apify LinkedIn trend phase:
+  - triggers actor `Wpp1BZ6yGWjySadk3` with fixed LinkedIn search/profile inputs
+  - fetches up to 500 dataset items
+  - maps items into `trend_items` rows with stable IDs, normalized timestamps, and relevance filtering
+  - safely skips when `APIFY_API_TOKEN` is missing or API calls fail
+- `.github/workflows/ingest_trends.yml` now runs **2x daily** and injects `APIFY_API_TOKEN` from repo secrets.
+- `docs/INGESTION.md` expanded with Apify trend phase details, payload, and workflow/env notes.
+- `docs/CREATORS.md` refreshed formatting and corpus target presentation.
+- `docs/Agent_status.md` updated with Agent I’s 2026-03-31 entry for Apify trend phase test coverage.
+- New offline tests for ingestion mapping and dedup/upsert behavior:
+  - `tests/integration/trend_ingestor_apify.test.ts`
+  - `tests/fixtures/apify_trends/sample_item.json`
 
 ## Verified locally (2026-03-31)
 
@@ -19,7 +25,7 @@
 | ----- | ------ |
 | `npm run lint` | Clean |
 | `npx tsc --noEmit` | Clean |
-| `npm test` | **38** tests passed (8 files; incl. voice/humanization coverage in prompt/linter tests) |
+| `npm test` | **41** tests passed (9 files; includes offline Apify trend ingestion integration tests) |
 | `npm run build` | Re-run recommended after this milestone before release tagging |
 
 **Live smoke (`npm run start -p 3010`):** `GET /api/trends` → **200** with items after `python ingestion/trend_ingestor.py`. `POST /api/generate` reaches Gemini; response depends on **quota** (e.g. **429** / `generation_failed` on free tier limits — not an app bug).
@@ -40,9 +46,10 @@ See [.env.example](../.env.example): `GEMINI_API_KEY` (required for real generat
 
 1. **Gemini:** ensure billing / model quota if `POST /api/generate` should succeed in demos.
 2. **Production:** set `APIFY_WEBHOOK_SECRET` before exposing `POST /api/ingestion/corpus`.
-3. **Voice QA:** run sample generation sweeps per preset (`human_balanced`, `sharp_sarcastic`, `professional_warm`, `plain_spartan`) and tune prompt constraints if fluency drops.
-4. **Optional:** PRD doc cleanup as needed. **`POST /api/trends/refresh`** runs `python ingestion/trend_ingestor.py` on the Node host (local dev; not for serverless without a worker).
-5. **Later:** Agent J (hosted DB) if serverless SQLite is insufficient.
+3. **Apify trends ops:** monitor actor schema drift (field names in dataset items) and adjust mapping keys in `trend_ingestor.py` if the actor output changes.
+4. **Voice QA:** run sample generation sweeps per preset (`human_balanced`, `sharp_sarcastic`, `professional_warm`, `plain_spartan`) and tune prompt constraints if fluency drops.
+5. **Optional:** PRD doc cleanup as needed. **`POST /api/trends/refresh`** runs `python ingestion/trend_ingestor.py` on the Node host (local dev; not for serverless without a worker).
+6. **Later:** Agent J (hosted DB) if serverless SQLite is insufficient.
 
 ## Quick verify commands
 

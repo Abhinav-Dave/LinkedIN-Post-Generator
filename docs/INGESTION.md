@@ -9,14 +9,46 @@ This project keeps a local SQLite corpus at **`data/corpus.db`** (override with 
 | `trend_items`  | `python ingestion/trend_ingestor.py` |
 | `corpus_posts` | Apify webhook → `POST /api/ingestion/corpus` |
 
-## Trend ingest (daily)
+## Trend ingest (2x daily)
 
 **Config:** `config/topics.json`
 
 - **`relevance_keywords`**, **`topic_focus`**: used to score headlines (relevance 1–5); rows with score **&lt; 3** are skipped.
 - **`reddit_subreddits`**: list of subreddit names (no `r/` prefix). If missing or empty, the script falls back to `LocalLLaMA`, `MachineLearning`, `cscareerquestions`.
 
-**Sources:** Hacker News top stories, Reddit weekly top posts per configured sub, GitHub Trending (Python daily HTML — best-effort).
+**Sources:** Hacker News top stories, Reddit weekly top posts per configured sub, GitHub Trending (Python daily HTML — best-effort), plus Apify LinkedIn trend scraping.
+
+### Apify trends source
+
+- **Actor ID:** `Wpp1BZ6yGWjySadk3`
+- **Auth env:** `APIFY_API_TOKEN` (required to run the actor and fetch dataset rows)
+- **Run mode:** Script starts a run with `waitForFinish`, then fetches up to **500** dataset items and maps them into `trend_items`.
+- **Merge policy:** Apify rows are merged with HN/Reddit/GitHub using the existing `trend_id` upsert flow and the same relevance threshold (`relevance_score >= 3`).
+- **Actor input payload:** the script sends this exact payload:
+
+```json
+{
+  "deepScrape": false,
+  "limitPerSource": 20,
+  "rawData": false,
+  "urls": [
+    "https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=excel%20automation&origin=FACETED_SEARCH",
+    "https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=power%20query&origin=FACETED_SEARCH",
+    "https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=b2b%20saas&origin=FACETED_SEARCH",
+    "https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=product%20led%20growth&origin=FACETED_SEARCH",
+    "https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=enterprise%20ai&origin=FACETED_SEARCH",
+    "https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=business%20intelligence&origin=FACETED_SEARCH",
+    "https://www.linkedin.com/in/lennyrachitsky/",
+    "https://www.linkedin.com/in/aagupta/",
+    "https://www.linkedin.com/in/leilagharani/",
+    "https://www.linkedin.com/in/purnaduggirala/",
+    "https://www.linkedin.com/in/alexmarcus1/",
+    "https://www.linkedin.com/in/abhatia23/",
+    "https://www.linkedin.com/in/barrett-linburg-32070310/",
+    "https://www.linkedin.com/in/bennstancil/"
+  ]
+}
+```
 
 **Run locally (repo root):**
 
@@ -25,7 +57,7 @@ pip install -r requirements.txt
 python ingestion/trend_ingestor.py
 ```
 
-**GitHub Actions:** `.github/workflows/ingest_trends.yml` (cron + `workflow_dispatch`), Python **3.11**, `CORPUS_DB_PATH=data/corpus.db`.
+**GitHub Actions:** `.github/workflows/ingest_trends.yml` (2 cron runs/day + `workflow_dispatch`), Python **3.11**, `CORPUS_DB_PATH=data/corpus.db`, `APIFY_API_TOKEN` from repo secret.
 
 > **Note:** The DB in Actions is ephemeral unless you persist it (artifact, external store, or commit — not done by default).
 

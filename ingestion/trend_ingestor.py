@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sqlite3
 import sys
 import time
@@ -35,6 +36,30 @@ DEFAULT_TOPICS: dict[str, Any] = {
     "topic_focus": ["AI", "LLM", "SaaS", "automation"],
     "relevance_keywords": ["AI", "LLM", "workflow", "SaaS", "automation", "agent"],
     "reddit_subreddits": ["LocalLLaMA", "MachineLearning", "cscareerquestions"],
+}
+
+APIFY_TREND_ACTOR_ID = "Wpp1BZ6yGWjySadk3"
+APIFY_TREND_LIMIT = 500
+APIFY_TREND_INPUT: dict[str, Any] = {
+    "deepScrape": False,
+    "limitPerSource": 20,
+    "rawData": False,
+    "urls": [
+        'https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=excel%20automation&origin=FACETED_SEARCH',
+        'https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=power%20query&origin=FACETED_SEARCH',
+        'https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=b2b%20saas&origin=FACETED_SEARCH',
+        'https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=product%20led%20growth&origin=FACETED_SEARCH',
+        'https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=enterprise%20ai&origin=FACETED_SEARCH',
+        'https://www.linkedin.com/search/results/content/?datePosted=%22past-24h%22&keywords=business%20intelligence&origin=FACETED_SEARCH',
+        "https://www.linkedin.com/in/lennyrachitsky/",
+        "https://www.linkedin.com/in/aagupta/",
+        "https://www.linkedin.com/in/leilagharani/",
+        "https://www.linkedin.com/in/purnaduggirala/",
+        "https://www.linkedin.com/in/alexmarcus1/",
+        "https://www.linkedin.com/in/abhatia23/",
+        "https://www.linkedin.com/in/barrett-linburg-32070310/",
+        "https://www.linkedin.com/in/bennstancil/",
+    ],
 }
 
 SCHEMA = """
@@ -143,6 +168,153 @@ def upsert_trend(
         """,
         (trend_id, headline, source_url, source_name, published_at, score, content_angle, cached_at),
     )
+
+
+def _first_nonempty_str(value: Any) -> str:
+    """Return the first non-empty string from a value that can be nested."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            candidate = _first_nonempty_str(item)
+            if candidate:
+                return candidate
+    if isinstance(value, dict):
+        for item in value.values():
+            candidate = _first_nonempty_str(item)
+            if candidate:
+                return candidate
+    return ""
+
+
+def _extract_field(item: dict[str, Any], candidates: list[str]) -> str:
+    """Extract the first non-empty string for any candidate key."""
+    for key in candidates:
+        if key in item:
+            value = _first_nonempty_str(item.get(key))
+            if value:
+                return value
+    return ""
+
+
+def _normalize_published_at(value: str) -> str:
+    """Normalize varied datetime strings to ISO-8601 with timezone."""
+    raw = value.strip()
+    if not raw:
+        return datetime.now(timezone.utc).isoformat()
+    try:
+        return datetime.fromtimestamp(float(raw), tz=timezone.utc).isoformat()
+    except ValueError:
+        pass
+    try:
+        return datetime.fromtimestamp(int(raw), tz=timezone.utc).isoformat()
+    except ValueError:
+        pass
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(normalized)
+    except ValueError:
+        return datetime.now(timezone.utc).isoformat()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def fetch_apify_trends(client: httpx.Client, cfg: dict[str, Any], cached_at: str) -> list[dict[str, Any]]:
+    """Run Apify actor, wait for completion, fetch and map trend-like items."""
+    token = os.environ.get("APIFY_API_TOKEN", "").strip()
+    if not token:
+        print("APIFY_API_TOKEN not set; skipping Apify LinkedIn trend ingestion.", file=sys.stderr)
+        return []
+
+    run_url = f"https://api.apify.com/v2/acts/{APIFY_TREND_ACTOR_ID}/runs?waitForFinish=900"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    try:
+        run_resp = client.post(run_url, headers=headers, json=APIFY_TREND_INPUT, timeout=930.0)
+        run_resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        print(f"Apify run trigger failed: {exc}", file=sys.stderr)
+        return []
+
+    run_payload = run_resp.json()
+    run_data = run_payload.get("data") if isinstance(run_payload.get("data"), dict) else run_payload
+    if not isinstance(run_data, dict):
+        print("Apify run response did not include run data; skipping Apify trends.", file=sys.stderr)
+        return []
+
+    status = str(run_data.get("status") or "").upper()
+    if status and status != "SUCCEEDED":
+        print(f"Apify run finished with status '{status}'; skipping Apify trends.", file=sys.stderr)
+        return []
+
+    dataset_id = _first_nonempty_str(run_data.get("defaultDatasetId"))
+    if not dataset_id:
+        print("Apify run missing defaultDatasetId; skipping Apify trends.", file=sys.stderr)
+        return []
+
+    items_url = (
+        f"https://api.apify.com/v2/datasets/{dataset_id}/items"
+        f"?format=json&clean=true&desc=true&limit={APIFY_TREND_LIMIT}"
+    )
+    try:
+        items_resp = client.get(items_url, headers=headers, timeout=120.0)
+        items_resp.raise_for_status()
+        payload_items = items_resp.json()
+    except httpx.HTTPError as exc:
+        print(f"Apify dataset fetch failed: {exc}", file=sys.stderr)
+        return []
+
+    if not isinstance(payload_items, list):
+        print("Apify dataset payload is not a list; skipping Apify trends.", file=sys.stderr)
+        return []
+
+    mapped: list[dict[str, Any]] = []
+    for item in payload_items:
+        if not isinstance(item, dict):
+            continue
+        headline = _extract_field(
+            item,
+            [
+                "text",
+                "postText",
+                "content",
+                "description",
+                "title",
+                "headline",
+                "summary",
+                "caption",
+                "message",
+            ],
+        )
+        if not headline:
+            continue
+        source_url = _extract_field(
+            item,
+            ["postUrl", "url", "linkedinUrl", "activityUrl", "postLink", "sourceUrl"],
+        ) or "https://www.linkedin.com"
+        published_raw = _extract_field(
+            item,
+            ["postedAt", "postedAtISO", "publishedAt", "createdAt", "date", "timestamp"],
+        )
+        published_at = _normalize_published_at(published_raw)
+        score = relevance_score(headline, cfg)
+        if score < 3:
+            continue
+        trend_identity = _extract_field(item, ["id", "urn", "postId"]) or source_url or headline
+        mapped.append(
+            {
+                "trend_id": stable_id("linkedin_apify", trend_identity),
+                "headline": headline[:500],
+                "source_url": source_url,
+                "source_name": "linkedin_apify",
+                "published_at": published_at,
+                "relevance_score": score,
+                "content_angle": f"LinkedIn operator takeaway: {headline[:120]}",
+                "cached_at": cached_at,
+            }
+        )
+
+    return mapped[:APIFY_TREND_LIMIT]
 
 
 def fetch_reddit_sub(
@@ -297,6 +469,20 @@ def main() -> None:
                 total += fetch_reddit_sub(client, conn, cfg, str(sub), cached_at)
 
             total += fetch_github_trending(client, conn, cfg, cached_at)
+            apify_rows = fetch_apify_trends(client, cfg, cached_at)
+            for row in apify_rows:
+                upsert_trend(
+                    conn,
+                    trend_id=row["trend_id"],
+                    headline=row["headline"],
+                    source_url=row["source_url"],
+                    source_name=row["source_name"],
+                    published_at=row["published_at"],
+                    score=row["relevance_score"],
+                    content_angle=row["content_angle"],
+                    cached_at=row["cached_at"],
+                )
+            total += len(apify_rows)
 
         conn.commit()
         if total == 0:

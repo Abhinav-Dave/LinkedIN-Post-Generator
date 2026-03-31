@@ -59,6 +59,28 @@ HN/Reddit/GitHub trend sources, Apify POST `corpus_ingestor`, `apify_config.json
 
 `compileall` on `ingestion/`; `trend_ingestor.py` wrote rows locally; `corpus_ingestor.py` with empty token → exit 0 + SKIP; `npm run lint` + `tsc --noEmit` clean (no TS edits in scope).
 
+### Update — 2026-03-31 (Apify-backed trend ingestion)
+
+**Scope used:** `ingestion/trend_ingestor.py`, `.github/workflows/ingest_trends.yml`, `docs/INGESTION.md` (Agent A allowed paths only).
+
+**What changed**
+- Added Apify trend ingestion directly to `trend_ingestor.py` using actor **`Wpp1BZ6yGWjySadk3`**.
+- Script now:
+  - reads `APIFY_API_TOKEN`,
+  - starts actor run with the fixed payload (LinkedIn searches + creator URLs),
+  - waits for completion (`waitForFinish`),
+  - fetches up to **500** dataset items,
+  - robustly maps varied dataset fields into `trend_items`,
+  - merges via existing `upsert_trend` flow with `relevance_score >= 3`.
+- Existing HN/Reddit/GitHub ingestion paths were left intact and continue to run in the same job.
+- Updated trend workflow schedule to run **2x daily** (`08:00` and `20:00` UTC) plus `workflow_dispatch`.
+- Added `APIFY_API_TOKEN` secret to `ingest_trends.yml` environment.
+- Updated `docs/INGESTION.md` with required env, actor info, exact payload, and merge behavior.
+
+**Notes**
+- If `APIFY_API_TOKEN` is missing, trend ingestion logs a skip message and still ingests HN/Reddit/GitHub (non-blocking fallback).
+- Apify rows use `source_name=linkedin_apify` and deterministic IDs (`stable_id("linkedin_apify", ...)`) to keep upserts stable.
+
 ---
 
 ## Agent B — Data layer (SQLite)
@@ -405,6 +427,24 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 
 `npm run lint`, `npx tsc --noEmit` passed after changes.
 
+### Update — 2026-03-31 (Apify trend-ingestion API/doc alignment)
+
+**Scope used:** docs-only note in Agent G section (no route code change required).
+
+**Decision**
+- No new API route is required for Apify trend ingestion.
+- Trend ingestion (including Apify actor fetch/merge) is owned by the Python ingestion phase/schedule (`ingestion/trend_ingestor.py` + workflow cadence), not by a new Next.js endpoint.
+
+**Route alignment note**
+- `POST /api/trends/refresh` remains a **manual/local trigger** that shells out to `python ingestion/trend_ingestor.py`.
+- With this setup, `/api/trends/refresh` can still refresh trends on Node hosts that have Python + deps installed, but scheduled Apify ingestion is handled outside this route.
+
+**Why no API change**
+- Existing routes are already sufficient for current responsibilities:
+  - `GET /api/trends` serves stored trend rows.
+  - `POST /api/trends/refresh` triggers the existing Python ingestion script.
+  - Scheduled Apify trend ingestion happens in ingestion workflows, so adding a new HTTP route would duplicate orchestration logic.
+
 ---
 
 ## Agent H — UI
@@ -493,6 +533,26 @@ Existing **`pipeline`**, **`prompt_builder`**, **`app/api/trends`**, and **`test
 ### Verification (Agent I)
 
 `npm run lint`, `npx tsc --noEmit`, `npm test` (**36 tests**), `npm run build` — all clean after latest Agent I updates.
+
+### Update — 2026-03-31 (Apify trends phase offline coverage)
+
+**Scope used:** `tests/**` only for implementation; no production code changes.
+
+**What changed**
+- Added deterministic, offline integration tests targeting `ingestion/trend_ingestor.py` Apify trend path via Python subprocess seams (mock/fake client objects, no network I/O).
+- Added fixture-backed sample Apify item and assertions for mapped trend row behavior (source, URL, timestamp normalization, score threshold, deterministic trend id shape, content angle/cached fields).
+- Added coverage for missing `APIFY_API_TOKEN` path to ensure Apify phase skip does not crash the overall ingest execution path in an offline stubbed run.
+- Added dedup/upsert coverage for repeated `trend_id` writes, asserting single-row preservation and latest-value update semantics.
+
+**Files touched (this update)**
+
+| Path | Change |
+| ---- | ------ |
+| `tests/fixtures/apify_trends/sample_item.json` | **New** fixture for deterministic Apify mapping input. |
+| `tests/integration/trend_ingestor_apify.test.ts` | **New** offline tests for mapping, missing-token non-crash path, and upsert dedup behavior. |
+
+**Verification (this update)**
+- `npm test` ✅ (**41 tests**, 9 files; all passing).
 
 ---
 
