@@ -50,7 +50,10 @@ export function isPublishedWithinTtl(publishedAtIso: string, nowMs: number): boo
 
 /** Ingestion row is eligible for prompts: not expired in DB and inside 7-day window. */
 export function isActiveTrendRow(row: Pick<TrendItemRow, "published_at" | "expired">, nowMs: number): boolean {
-  if (row.expired !== 0) return false;
+  // Supabase/PostgREST can serialize numeric columns as strings in some paths.
+  // Treat "0" and 0 as active; any other value is expired.
+  const expired = Number(row.expired);
+  if (!Number.isFinite(expired) || expired !== 0) return false;
   return isPublishedWithinTtl(row.published_at, nowMs);
 }
 
