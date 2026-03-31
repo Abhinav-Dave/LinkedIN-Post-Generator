@@ -62,12 +62,12 @@ python ingestion/trend_ingestor.py
 
 ### Demo safety stop (cost control)
 
-The trends workflow includes a guard env:
+The trends workflow currently contains a hard stop timestamp in the run step:
 
-- `DEMO_STOP_AFTER_UTC` (ISO UTC timestamp, e.g. `2026-04-01T23:59:59Z`)
+- `STOP_AFTER="2026-04-01T23:59:59Z"`
 
-When current UTC time passes this value, scheduled runs auto-skip and print a skip reason in logs.  
-Use this to prevent continuous paid ingestion during demos.
+After this UTC time, scheduled runs auto-skip and print a skip message in logs.  
+To resume regular ingestion, update or remove that value in `.github/workflows/ingest_trends.yml`.
 
 **Supabase env for trend ingest (recommended):**
 - `SUPABASE_URL`

@@ -3,48 +3,29 @@ name: ingest-trends
 on:
   schedule:
     - cron: "0 */12 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 jobs:
   run:
     runs-on: ubuntu-latest
-    env:
-      # Demo safety stop: scheduled runs auto-skip after this UTC timestamp.
-      # Update/remove this value when you want recurring runs again.
-      DEMO_STOP_AFTER_UTC: "2026-04-01T23:59:59Z"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - name: Demo window guard
-        id: demo_guard
-        run: |
-          STOP_AFTER="${DEMO_STOP_AFTER_UTC:-}"
-          SHOULD_RUN="true"
-          REASON="no_stop_after_configured"
-          if [ -n "$STOP_AFTER" ]; then
-            NOW_EPOCH="$(date -u +%s)"
-            STOP_EPOCH="$(date -u -d "$STOP_AFTER" +%s)"
-            if [ "$NOW_EPOCH" -gt "$STOP_EPOCH" ]; then
-              SHOULD_RUN="false"
-              REASON="past_demo_stop_after:${STOP_AFTER}"
-            else
-              REASON="within_demo_window_until:${STOP_AFTER}"
-            fi
-          fi
-          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
-          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
-          echo "Demo guard -> should_run=${SHOULD_RUN} (${REASON})"
       - name: Ingest trends into SQLite
-        if: steps.demo_guard.outputs.should_run == 'true'
         env:
           CORPUS_DB_PATH: data/corpus.db
           APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python ingestion/trend_ingestor.py
-      - name: Skip reason
-        if: steps.demo_guard.outputs.should_run != 'true'
-        run: echo "Skipping ingest: ${{ steps.demo_guard.outputs.reason }}"
+        run: |
+          STOP_AFTER="2026-04-01T23:59:59Z"
+          NOW_EPOCH="$(date -u +%s)"
+          STOP_EPOCH="$(date -u -d "$STOP_AFTER" +%s)"
+          if [ "$NOW_EPOCH" -gt "$STOP_EPOCH" ]; then
+            echo "Skipping ingest after demo window: $STOP_AFTER"
+            exit 0
+          fi
+          python ingestion/trend_ingestor.py
