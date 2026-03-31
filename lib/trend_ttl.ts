@@ -15,8 +15,26 @@ export const TREND_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const FUTURE_SKEW_MS = 120_000;
 
 export function parseIsoToUtcMs(iso: string): number | null {
-  const ms = Date.parse(iso);
+  const normalized = normalizeTimestamp(iso);
+  const ms = Date.parse(normalized);
   return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Accept both strict ISO and Postgres-style timestamptz strings.
+ * Examples handled:
+ * - 2026-03-31T19:33:18.927432+00:00
+ * - 2026-03-31 19:33:18.927432+00
+ */
+function normalizeTimestamp(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  let out = trimmed.replace(" ", "T");
+  // Convert timezone suffix "+00" / "-07" into RFC3339 form "+00:00" / "-07:00".
+  if (/[+-]\d{2}$/.test(out)) {
+    out = `${out}:00`;
+  }
+  return out;
 }
 
 /**
