@@ -21,28 +21,22 @@ jobs:
       - name: Demo window guard
         id: demo_guard
         run: |
-          python - <<'PY'
-          import os
-          from datetime import datetime, timezone
-
-          raw = os.getenv("DEMO_STOP_AFTER_UTC", "").strip()
-          should_run = "true"
-          reason = "no_stop_after_configured"
-
-          if raw:
-            cutoff = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
-            if now > cutoff:
-              should_run = "false"
-              reason = f"past_demo_stop_after:{raw}"
-            else:
-              reason = f"within_demo_window_until:{raw}"
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-            fh.write(f"should_run={should_run}\n")
-            fh.write(f"reason={reason}\n")
-          print(f"Demo guard -> should_run={should_run} ({reason})")
-          PY
+          STOP_AFTER="${DEMO_STOP_AFTER_UTC:-}"
+          SHOULD_RUN="true"
+          REASON="no_stop_after_configured"
+          if [ -n "$STOP_AFTER" ]; then
+            NOW_EPOCH="$(date -u +%s)"
+            STOP_EPOCH="$(date -u -d "$STOP_AFTER" +%s)"
+            if [ "$NOW_EPOCH" -gt "$STOP_EPOCH" ]; then
+              SHOULD_RUN="false"
+              REASON="past_demo_stop_after:${STOP_AFTER}"
+            else
+              REASON="within_demo_window_until:${STOP_AFTER}"
+            fi
+          fi
+          echo "should_run=${SHOULD_RUN}" >> "$GITHUB_OUTPUT"
+          echo "reason=${REASON}" >> "$GITHUB_OUTPUT"
+          echo "Demo guard -> should_run=${SHOULD_RUN} (${REASON})"
       - name: Ingest trends into SQLite
         if: steps.demo_guard.outputs.should_run == 'true'
         env:
