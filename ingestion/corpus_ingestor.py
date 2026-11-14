@@ -48,13 +48,14 @@ def main() -> None:
         sys.exit(0)
 
     cfg = load_apify_input()
-    actor = cfg.get("actor") or "apify/linkedin-post-scraper"
+    actor = cfg.get("actor") or "johnvc/linkedin-posts-api"
     actor_input = cfg.get("input") or {}
 
     # Start actor run (Apify API v2). Never print the token or full error bodies in CI logs if sensitive.
     url = f"https://api.apify.com/v2/acts/{actor.replace('/', '~')}/runs"
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    body = {"input": actor_input}
+    # The run endpoint takes the actor input itself as the request body.
+    body = actor_input
 
     with httpx.Client() as client:
         r = client.post(url, headers=headers, json=body, timeout=60.0)

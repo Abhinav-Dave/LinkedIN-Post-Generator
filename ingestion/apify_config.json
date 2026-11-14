@@ -1,5 +1,5 @@
 {
-  "actor": "apify/linkedin-post-scraper",
+  "actor": "johnvc/linkedin-posts-api",
   "input": {
     "profileUrls": [],
     "maxPostsPerProfile": 50,
